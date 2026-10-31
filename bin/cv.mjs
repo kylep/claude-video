@@ -6,14 +6,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { layoutScene, pickRandomVoice, pickVoice, splitSegments, toSrt } from '../lib/timing.mjs';
+import { boardBase, layoutScene, pickRandomVoice, pickVoice, sayable, speechRanges, splitSegments, toSrt } from '../lib/timing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports', 'video');
 const FPS = 30;
-const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'outro'];
-const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps' };
+const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'outro'];
+const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts' };
+const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'transistor', 'buzzer', 'glow', 'strip', 'flow'];
+const ANCHORS = { led: ['dome', 'anode', 'cathode', 'flat'], resistor: ['bands', 'left', 'right', 'body'], transistor: ['flat', 'e', 'b', 'c'] };
+const BOARD_REF = /^(?:[a-j](?:[1-9]|[1-5]\d|6[0-3])|(?:far|near)[+-]:(?:[1-9]|[1-5]\d|6[0-3]))$/;
 const VENV_PY = path.join(ROOT, '.venv', 'bin', 'python');
 // Neural engines run locally through mlx-audio (Apple Silicon). Kokoro is the default:
 // fast, small, and non-autoregressive, so it doesn't skip or repeat words.
@@ -63,6 +66,26 @@ function validate(spec) {
       if (cues && cues !== n) errs.push(`${at}: ${cues} [[next]] cues but ${n} ${key} (use one cue per item, or none)`);
     }
     if ((s.type === 'image' || s.type === 'clip') && !s.src) errs.push(`${at}: src is required`);
+    if (s.type === 'diagram') {
+      if (!ANCHORS[s.component]) errs.push(`${at}: component must be one of ${Object.keys(ANCHORS).join(', ')}`);
+      (s.callouts ?? []).forEach((c, ci) => {
+        if (ANCHORS[s.component] && !ANCHORS[s.component].includes(c.anchor)) errs.push(`${at}: callouts[${ci}].anchor must be one of ${ANCHORS[s.component].join(', ')}`);
+      });
+    }
+    if (s.type === 'breadboard') {
+      (s.groups ?? []).forEach((g, gi) => {
+        if (!Array.isArray(g.items) || !g.items.length) errs.push(`${at}: groups[${gi}].items must be non-empty`);
+        (g.items ?? []).forEach((it, ii) => {
+          const where = `${at}: groups[${gi}].items[${ii}]`;
+          if (!BOARD_KINDS.includes(it.kind)) errs.push(`${where}: kind must be one of ${BOARD_KINDS.join(', ')}`);
+          for (const ref of it.at ?? []) if (!BOARD_REF.test(ref)) errs.push(`${where}: bad hole "${ref}" (a1..j63 or far+:N / near-:N)`);
+          const need = { wire: 2, resistor: 2, led: 2, transistor: 3, buzzer: 2, strip: 1 }[it.kind];
+          if (need && (it.at ?? []).length !== need) errs.push(`${where}: ${it.kind} needs ${need} holes in "at"`);
+          if (it.kind === 'flow' && (it.at ?? []).length < 2) errs.push(`${where}: flow needs at least 2 points in "at"`);
+          if (it.kind === 'glow' && !it.id) errs.push(`${where}: glow needs an id`);
+        });
+      });
+    }
     if (s.type === 'code' && !s.code) errs.push(`${at}: code is required`);
     if (s.type === 'code' && s.code) {
       const lines = s.code.split('\n');
@@ -71,6 +94,7 @@ function validate(spec) {
       if (lines.length > 18) errs.push(`${at}: ${lines.length} code lines; keep it under 18 or split the scene`);
     }
   });
+  if (spec.music && (typeof spec.music.src !== 'string' || !spec.music.src)) errs.push('spec.music.src is required when music is set');
   if (errs.length) die(`invalid spec:\n  - ${errs.join('\n  - ')}`);
 }
 
@@ -159,12 +183,6 @@ function ffprobe(args) {
 
 const mediaSeconds = (file) => Number(ffprobe(['-show_entries', 'format=duration', '-of', 'csv=p=0', file]).trim()) || 0;
 
-function sayable(text, pronounce = {}) {
-  let t = text;
-  for (const [word, sounds] of Object.entries(pronounce)) t = t.replace(new RegExp(`\\b${word}\\b`, 'g'), sounds);
-  return t;
-}
-
 // Build props.json: narration audio per [[next]] segment, cue frames, captions.
 function build(arg) {
   const { file, dir, spec } = resolveSpec(arg);
@@ -190,6 +208,7 @@ function build(arg) {
       scene.src = `${pubRel}/assets/${name}`;
       if (s.type === 'clip') minFrames = Math.round(mediaSeconds(src) * FPS) + 20;
     }
+    if (s.type === 'breadboard') scene.base = boardBase(spec.scenes, si);
     const segTexts = splitSegments(s.narration);
     const audio = segs[si].map((j) => (j ? { key: j.key, seconds: wavSeconds(path.join(pubDir, `${j.key}.wav`)) } : null));
     const layout = layoutScene(segTexts, audio.map((a) => a?.seconds ?? 0), { fps: FPS, minFrames });
@@ -200,6 +219,20 @@ function build(arg) {
     return scene;
   });
 
+  let music;
+  if (spec.music) {
+    const src = path.resolve(dir, spec.music.src);
+    if (!fs.existsSync(src)) die(`music src not found: ${src}`);
+    const name = path.basename(src);
+    fs.copyFileSync(src, path.join(pubDir, 'assets', name));
+    music = {
+      src: `${pubRel}/assets/${name}`,
+      volume: spec.music.volume ?? 0.16,
+      duck: spec.music.duck ?? 0.4,
+      speech: speechRanges(scenes),
+    };
+  }
+
   const props = {
     title: spec.title,
     fps: FPS,
@@ -208,6 +241,7 @@ function build(arg) {
     accent: spec.accent ?? '#d97757',
     showCaptions: spec.captions ?? true,
     voiceLabel: tts.engine === 'kokoro' ? tts.voice : `${tts.engine}/${tts.voice ?? 'default'}`,
+    music,
     scenes,
   };
   const buildDir = path.join(dir, 'build');

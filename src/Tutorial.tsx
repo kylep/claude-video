@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Sequence, Series, interpolate, staticFile, useCurrentFrame } from 'remotion';
 import { sceneComponents } from './scenes';
 import { colors, fonts } from './theme';
-import type { Scene, VideoProps } from './types';
+import type { Music, Scene, VideoProps } from './types';
 
 const FADE = 8;
 
@@ -34,6 +34,22 @@ const SceneFrame: React.FC<{ scene: Scene; accent: string; showCaptions: boolean
   );
 };
 
+// Background music: looped, faded in and out, ducked smoothly whenever narration plays.
+const DUCK_RAMP = 9; // frames to ease into/out of a duck
+const MusicBed: React.FC<{ music: Music; total: number; fps: number }> = ({ music, total, fps }) => {
+  const level = (f: number) => {
+    let gap = Infinity; // frames to the nearest narration (0 while speaking)
+    for (const [a, b] of music.speech) {
+      if (f >= a && f < b) { gap = 0; break; }
+      gap = Math.min(gap, f < a ? a - f : f - b + 1);
+    }
+    const duck = interpolate(gap, [0, DUCK_RAMP], [music.duck, 1], { extrapolateRight: 'clamp' });
+    const fade = interpolate(f, [0, fps * 1.5, total - fps * 2.5, total], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    return music.volume * duck * fade;
+  };
+  return <Audio src={staticFile(music.src)} loop volume={level} />;
+};
+
 // "voice: <name>" bottom-right for the opening scene, so every video credits its narrator.
 const VoiceLabel: React.FC<{ label: string; until: number; accent: string }> = ({ label, until, accent }) => {
   const frame = useCurrentFrame();
@@ -45,7 +61,7 @@ const VoiceLabel: React.FC<{ label: string; until: number; accent: string }> = (
   );
 };
 
-export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions, voiceLabel }) => {
+export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions, voiceLabel, music, fps }) => {
   const frame = useCurrentFrame();
   const total = scenes.reduce((a, s) => a + s.durationInFrames, 0) || 1;
   return (
@@ -60,6 +76,7 @@ export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCapt
       <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>
         {title}
       </div>
+      {music && <MusicBed music={music} total={total} fps={fps} />}
       {voiceLabel && scenes.length > 0 && <VoiceLabel label={voiceLabel} until={scenes[0].durationInFrames} accent={accent} />}
       <div style={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: `${(frame / total) * 100}%`, background: accent }} />
     </AbsoluteFill>

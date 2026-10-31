@@ -4,6 +4,8 @@ import {
 } from 'remotion';
 import { colors, fonts } from './theme';
 import type { Scene } from './types';
+import { BreadboardScene } from './breadboard';
+import { DiagramScene } from './diagram';
 
 type P = { scene: Scene; accent: string };
 
@@ -186,15 +188,24 @@ export const FlowScene: React.FC<P> = ({ scene, accent }) => {
   );
 };
 
+// Fits any aspect ratio inside the space left under the heading (pixel bounds,
+// because percentage heights don't resolve reliably for images in flex columns).
 export const ImageScene: React.FC<P> = ({ scene, accent }) => {
   const frame = useCurrentFrame();
   const zoom = interpolate(frame, [0, scene.durationInFrames], [1, 1.06]);
+  const maxW = 1920 - 150 * 2;
+  const maxH = 1080 - 120 - 170 - (scene.heading ? 120 : 0) - (scene.caption ? 60 : 0);
   return (
     <Body>
       <Heading text={scene.heading} accent={accent} />
-      <Rise at={4} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 0 }}>
-        <div style={{ flex: 1, minHeight: 0, borderRadius: 20, overflow: 'hidden', border: `2px solid ${colors.border}` }}>
-          {scene.src && <Img src={staticFile(scene.src)} style={{ height: '100%', objectFit: 'contain', transform: `scale(${zoom})` }} />}
+      <Rise at={4} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+        <div style={{ display: 'inline-block', borderRadius: 20, overflow: 'hidden', border: `2px solid ${colors.border}`, lineHeight: 0 }}>
+          {scene.src && (
+            <Img src={staticFile(scene.src)} style={{
+              display: 'block', maxWidth: maxW, maxHeight: maxH, width: 'auto', height: 'auto',
+              transform: `scale(${zoom})`,
+            }} />
+          )}
         </div>
         {scene.caption && <div style={{ marginTop: 20, fontSize: 30, color: colors.muted }}>{scene.caption}</div>}
       </Rise>
@@ -224,5 +235,5 @@ export const OutroScene: React.FC<P> = ({ scene, accent }) => (
 
 export const sceneComponents: Record<Scene['type'], React.FC<P>> = {
   title: TitleScene, bullets: BulletsScene, code: CodeScene, terminal: TerminalScene,
-  flow: FlowScene, image: ImageScene, clip: ClipScene, outro: OutroScene,
+  flow: FlowScene, image: ImageScene, clip: ClipScene, breadboard: BreadboardScene, diagram: DiagramScene, outro: OutroScene,
 };

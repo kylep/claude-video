@@ -32,8 +32,11 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
    Never render without looking at the stills at least once.
 6. **Render:** `node bin/cv.mjs render <slug>`. It fails loudly if the output has
    no audio stream. Spot-check a frame from the MP4 if you changed layouts.
-7. **Commit** the spec (`projects/<slug>/video.json`) to the claude-video repo.
-   Build output and audio are gitignored. Report the MP4 path to the user.
+7. **Don't publish before review.** This repo is public. Before adding assets,
+   add the project folder to `.git/info/exclude` (personal photos, third-party
+   images and music must never be committed). Render to `~/gh/reports/video/`,
+   report the MP4 path, and commit the spec only after the user has reviewed
+   the video and said it can go public.
 
 ## Script rules
 
@@ -53,6 +56,19 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 - **Mispronunciations:** add `"pronounce": {"Remotion": "Ree-motion"}`. This
   affects audio only; captions keep the real spelling. Listen-test unfamiliar
   terms by running a one-scene spec and checking the Whisper transcript.
+  Built-in defaults (`DEFAULT_PRONOUNCE` in `lib/timing.mjs`) already fix
+  words Kokoro gets wrong everywhere: **LED** → "L E D" (it said "lead", the
+  metal), **LEDs** → "L E Dees", **JSON** → "jay-sawn" (it spelled out
+  "J S O N"). A spec's `pronounce` overrides them. Add new always-wrong words
+  there, not per spec.
+- **Standalone:** a video can't ask for anything that only works in a chat with
+  an agent ("send a photo for a second look"). End with something the viewer
+  can do alone.
+- **Hands-on build videos (wiring, assembly):** one placement per `[[next]]`
+  step. Name both ends every time ("Wire 5 is black. It goes from a29 to the
+  bottom blue rail."), with the same text in the on-screen label and the
+  subtitles. Use the written guide's names and numbers ("Wire 5"), never
+  unexplained codes. Give safety checks their own scene before power-on.
 
 ## Scene types
 
@@ -65,7 +81,20 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 | `terminal` | `heading`, `lines[{cmd, out}]` | CLI walkthroughs, typed out, cued |
 | `image` | `heading`, `src`, `caption` | screenshots (slow zoom) |
 | `clip` | `heading`, `src` | screen recordings (muted under narration; scene lasts ≥ the clip) |
+| `breadboard` | `heading`, `groups[{label, items[]}]`, `zoom`, `tags`, `fresh` | electronics builds: parts snap into holes one group per cue, camera eases to each group, holes get tags |
+| `diagram` | `heading`, `component` (`led`/`resistor`/`transistor`), `callouts[{text, anchor, lit?}]` | one big part with labels popping in per cue (`\n` splits a label line) |
 | `outro` | `title`, `subtitle` | wrap-up + where to find it |
+
+**Breadboard items** (`groups[].items[]`): holes are `a1`…`j63`, rails are
+`far+:N`, `far-:N`, `near+:N`, `near-:N` (far = top of screen). Kinds: `pico`
+(`col` of pin 1; pins land in rows c and h), `wire` (`at[2]`, `color`),
+`resistor` (`at[2]`, `bands[]`), `led` (`at[anode, cathode]`, `color`, `id`),
+`transistor` (`at[E, B, C]`), `buzzer` (`at[−, +]`, `id`). Effects that only
+show during their step: `glow` (`id`, `on`; lights an LED or animates a
+buzzer), `strip` (`at[1]`; highlights the five joined holes, or a whole rail),
+`flow` (`at[≥2]`; current dots along the refs, following wires). Parts carry
+over into later breadboard scenes; `"fresh": true` starts empty. Use one
+`[[next]]` per group, as with bullets.
 
 Every scene needs `id` (unique) and `narration`. `src` paths are relative to the
 spec file. Keep assets beside it in `projects/<slug>/`.
@@ -78,7 +107,9 @@ Recording permission. If it fails, ask the user to record instead of working aro
 ## Spec top-level
 
 `slug`, `title` (shown top-left on every scene), `targetSeconds`, `accent` (hex),
-`captions` (bool), `pronounce`, `scenes`, and the voice settings:
+`captions` (bool), `pronounce`, `music` (`{src, volume=0.16, duck=0.4}`: a
+looped bed, faded in/out and ducked under narration; use CC0 tracks and
+note the source), `scenes`, and the voice settings:
 
 | `tts` | default `voice` | notes |
 |---|---|---|

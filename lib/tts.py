@@ -16,13 +16,30 @@ from mlx_audio.tts.utils import load_model
 STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16"
 
 
-def words(s):
-    # Hyphens join ("hand-written" == "handwritten"); other punctuation separates.
-    return re.sub(r"[^a-z0-9' ]+", " ", s.lower().replace("-", "")).split()
+def words(s, hyphen=""):
+    # hyphen="" joins ("hand-written" == "handwritten"); hyphen=" " splits
+    # ("220-ohm" == "220 ohm"). Other punctuation always separates.
+    toks = re.sub(r"[^a-z0-9' ]+", " ", s.lower().replace("-", hyphen)).split()
+    # Runs of spelled-out letters ("L.E.D.", "L E D") collapse to one word ("led").
+    out, run = [], ""
+    for t in toks + [""]:
+        if len(t) == 1 and t.isalpha():
+            run += t
+            continue
+        if run:
+            out.append(run)
+            run = ""
+        if t:
+            out.append(t)
+    return out
 
 
 def wer(ref, hyp):
-    r, h = words(ref), words(hyp)
+    # Whisper hyphenates inconsistently, so score both readings and keep the better.
+    return min(_wer(words(ref, j), words(hyp, j)) for j in ("", " "))
+
+
+def _wer(r, h):
     d = list(range(len(h) + 1))
     for i in range(1, len(r) + 1):
         prev, d[0] = d[0], i

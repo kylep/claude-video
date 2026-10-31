@@ -64,3 +64,48 @@ test('pickRandomVoice skips excluded and weights preferred', () => {
   assert.equal(pickRandomVoice(cfg, () => 0.99), 'c');
   assert.throws(() => pickRandomVoice({ pool: ['a'], excluded: { a: 'x' } }));
 });
+
+test('boardBase carries parts forward between breadboard scenes, skipping glows', async () => {
+  const { boardBase } = await import('../lib/timing.mjs');
+  const pico = { kind: 'pico', col: 1 };
+  const wire = { kind: 'wire', at: ['j1', 'far+:1'] };
+  const glow = { kind: 'glow', id: 'red' };
+  const scenes = [
+    { type: 'title' },
+    { type: 'breadboard', groups: [{ items: [pico] }] },
+    { type: 'bullets' },
+    { type: 'breadboard', groups: [{ items: [wire, glow] }] },
+    { type: 'breadboard', groups: [{ items: [glow] }] },
+    { type: 'breadboard', fresh: true, groups: [{ items: [wire] }] },
+  ];
+  assert.deepEqual(boardBase(scenes, 1), []);
+  assert.deepEqual(boardBase(scenes, 3), [pico]);
+  assert.deepEqual(boardBase(scenes, 4), [pico, wire]);
+  assert.deepEqual(boardBase(scenes, 5), []);
+});
+
+test('speechRanges offsets segments by scene start', async () => {
+  const { speechRanges } = await import('../lib/timing.mjs');
+  const r = speechRanges([
+    { durationInFrames: 100, segments: [{ from: 10, durationInFrames: 30 }, { from: 50, durationInFrames: 20 }] },
+    { durationInFrames: 60, segments: [{ from: 5, durationInFrames: 40 }] },
+  ]);
+  assert.deepEqual(r, [[10, 40], [50, 70], [105, 145]]);
+});
+
+test('sayable applies default pronunciations, longest first, spec overrides win', async () => {
+  const { sayable } = await import('../lib/timing.mjs');
+  assert.equal(sayable('Three LEDs, one LED, a JSON file.'), 'Three L E Dees, one L E D, a jay-sawn file.');
+  assert.equal(sayable('LEDGER and BLED stay put.'), 'LEDGER and BLED stay put.');
+  assert.equal(sayable('The LED in Remotion', { LED: 'light', Remotion: 'Ree-motion' }), 'The light in Ree-motion');
+});
+
+test('boardBase drops strip and flow effects', async () => {
+  const { boardBase } = await import('../lib/timing.mjs');
+  const wire = { kind: 'wire', at: ['a1', 'a5'] };
+  const scenes = [
+    { type: 'breadboard', groups: [{ items: [wire, { kind: 'strip', at: ['a1'] }, { kind: 'flow', at: ['a1', 'a5'] }] }] },
+    { type: 'breadboard', groups: [{ items: [{ kind: 'glow', id: 'x' }] }] },
+  ];
+  assert.deepEqual(boardBase(scenes, 1), [wire]);
+});
