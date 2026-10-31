@@ -2,22 +2,21 @@
   "slug": "how-it-works",
   "title": "claude-video",
   "targetSeconds": 60,
+  "tts": "kokoro",
   "voice": "auto",
-  "rate": 178,
+  "speed": 1.0,
   "accent": "#d97757",
   "captions": true,
   "pronounce": {
-    "Remotion": "Ree-motion",
-    "JSON": "Jason",
-    "MP4": "M P 4"
+    "Remotion": "Ree-motion"
   },
   "scenes": [
     {
       "id": "intro",
       "type": "title",
       "title": "Videos from a prompt",
-      "subtitle": "How Claude makes tutorial videos with code and built-in macOS tools",
-      "narration": "This whole video was made by Claude, using nothing but code and the tools already on a Mac."
+      "subtitle": "Tutorial videos from code and free tools running on a Mac",
+      "narration": "This whole video was made by Claude, using code and free tools running locally on a Mac."
     },
     {
       "id": "pipeline",
@@ -30,7 +29,7 @@
         },
         {
           "label": "Voice",
-          "detail": "macOS say speaks every line"
+          "detail": "Kokoro, a local neural voice"
         },
         {
           "label": "Timing",
@@ -41,7 +40,7 @@
           "detail": "Remotion turns React into MP4"
         }
       ],
-      "narration": "Here's the pipeline. [[next]] Claude writes a script as JSON: scenes, visuals, and narration. [[next]] The built-in say command speaks each line. [[next]] Measured audio lengths set the timing of every animation. [[next]] And Remotion renders it all to an MP4."
+      "narration": "Here's the pipeline. [[next]] Claude writes the script as JSON. [[next]] Kokoro, a local neural voice, reads each line, and Whisper listens back for mistakes. [[next]] Real audio lengths set the timing. [[next]] And Remotion renders the MP4."
     },
     {
       "id": "spec",
@@ -53,7 +52,7 @@
         5
       ],
       "code": "{\n  \"id\": \"pipeline\",\n  \"type\": \"flow\",\n  \"heading\": \"The pipeline\",\n  \"narration\": \"Here's how. [[next]] Claude writes...\",\n  \"steps\": [\n    { \"label\": \"Script\" },\n    { \"label\": \"Voice\" }\n  ]\n}",
-      "narration": "Each scene is a small block like this. The type picks a layout, and next markers in the narration tell each visual exactly when to appear, so the picture stays in sync with the voice."
+      "narration": "Each scene is a small block like this. The type picks a layout, and next markers tell each visual exactly when to appear, in sync with the voice."
     },
     {
       "id": "commands",
@@ -69,7 +68,7 @@
           "out": "wrote ~/gh/reports/video/how-it-works.mp4 (60.0s, audio+video)"
         }
       ],
-      "narration": "[[next]] Before rendering, Claude grabs a still of every scene and actually looks at them, fixing anything cramped or cluttered. [[next]] Then one command renders the final video, with subtitles."
+      "narration": "[[next]] First, Claude renders a still of every scene and checks the layout. [[next]] Then one command renders the video, with subtitles."
     },
     {
       "id": "why",
@@ -80,7 +79,7 @@
         "Scenes are data, not hand-written animation",
         "Timing comes from the real audio"
       ],
-      "narration": "[[next]] Every video shares one theme. [[next]] Scenes are data, not hand-written animation. [[next]] And timing comes from the real audio, never from guesses."
+      "narration": "[[next]] Every video shares one theme. [[next]] Scenes are data, not hand-written animation. [[next]] And timing comes from the real audio."
     },
     {
       "id": "outro",

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// cv: spec-driven tutorial videos. video.json -> `say` narration -> Remotion render.
+// cv: spec-driven tutorial videos. video.json -> local TTS narration -> Remotion render.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -14,6 +14,16 @@ const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports
 const FPS = 30;
 const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'outro'];
 const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps' };
+const VENV_PY = path.join(ROOT, '.venv', 'bin', 'python');
+// Neural engines run locally through mlx-audio (Apple Silicon). Kokoro is the default:
+// fast, small, and non-autoregressive, so it doesn't skip or repeat words.
+const ENGINES = {
+  kokoro: { model: 'mlx-community/Kokoro-82M-bf16', voice: 'af_heart' },
+  qwen3: { model: 'mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit', voice: 'Ryan' },
+  chatterbox: { model: 'mlx-community/chatterbox-turbo-fp16', voice: null },
+  say: {},
+};
+const MAX_WER = 0.2;
 
 const die = (msg) => { console.error(`cv: ${msg}`); process.exit(1); };
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -32,10 +42,12 @@ function validate(spec) {
   const errs = [];
   if (!spec.title) errs.push('spec.title is required');
   if (!Array.isArray(spec.scenes) || !spec.scenes.length) errs.push('spec.scenes must be a non-empty array');
+  if (!/^[a-z0-9-]+$/.test(spec.slug ?? '')) errs.push('spec.slug must match [a-z0-9-]+');
+  if (spec.tts && !ENGINES[spec.tts]) errs.push(`spec.tts must be one of ${Object.keys(ENGINES).join(', ')}`);
   const ids = new Set();
   (spec.scenes ?? []).forEach((s, i) => {
     const at = `scenes[${i}]${s.id ? ` (${s.id})` : ''}`;
-    if (!s.id) errs.push(`${at}: id is required`);
+    if (!/^[A-Za-z0-9_-]+$/.test(s.id ?? '')) errs.push(`${at}: id is required and must match [A-Za-z0-9_-]+`);
     if (ids.has(s.id)) errs.push(`${at}: duplicate id`);
     ids.add(s.id);
     if (!TYPES.includes(s.type)) errs.push(`${at}: type must be one of ${TYPES.join(', ')}`);
@@ -59,28 +71,70 @@ function validate(spec) {
   if (errs.length) die(`invalid spec:\n  - ${errs.join('\n  - ')}`);
 }
 
-let voiceCache;
-function resolveVoice(spec) {
-  if (spec.voice && spec.voice !== 'auto') return spec.voice;
-  voiceCache ??= pickVoice(run('say', ['-v', '?']));
-  return voiceCache;
+let sayVoiceCache;
+function resolveTts(spec) {
+  const engine = spec.tts ?? 'kokoro';
+  if (engine === 'say') {
+    const voice = spec.voice && spec.voice !== 'auto' ? spec.voice : (sayVoiceCache ??= pickVoice(run('say', ['-v', '?'])));
+    return { engine, voice, rate: spec.rate ?? 185 };
+  }
+  if (!fs.existsSync(VENV_PY)) die(`tts "${engine}" needs the Python env: run \`node bin/cv.mjs setup\` (or set "tts": "say")`);
+  const { model, voice } = ENGINES[engine];
+  return {
+    engine, model,
+    voice: spec.voice && spec.voice !== 'auto' ? spec.voice : voice,
+    speed: spec.speed ?? 1.0,
+    instruct: spec.instruct ?? null,
+    verify: spec.verify ?? true,
+  };
 }
 
-function speak(text, { voice, rate, outDir }) {
-  const key = createHash('sha1').update(`${voice}|${rate}|${text}`).digest('hex').slice(0, 16);
-  const wav = path.join(outDir, `${key}.wav`);
-  if (!fs.existsSync(wav)) {
-    const txt = path.join(outDir, `${key}.txt`);
-    const aiff = path.join(outDir, `${key}.aiff`);
-    fs.writeFileSync(txt, text);
-    run('say', ['-v', voice, '-r', String(rate), '-f', txt, '-o', aiff]);
-    run('afconvert', ['-f', 'WAVE', '-d', 'LEI16@48000', aiff, wav]);
-    fs.rmSync(aiff);
-    fs.rmSync(txt);
-  }
+const ttsKey = (tts, text) =>
+  createHash('sha1').update(JSON.stringify([tts.engine, tts.voice, tts.rate, tts.speed, tts.instruct, text])).digest('hex').slice(0, 16);
+
+const wavSeconds = (wav) => {
   const m = run('afinfo', [wav]).match(/estimated duration:\s*([\d.]+)/);
   if (!m) die(`could not read duration of ${wav}`);
-  return { file: wav, key, seconds: Number(m[1]) };
+  return Number(m[1]);
+};
+
+// Synthesize every uncached clip. jobs: [{key, text (spoken form), ref (caption form)}].
+function synthesize(jobs, tts, outDir) {
+  const todo = jobs.filter((j) => !fs.existsSync(path.join(outDir, `${j.key}.wav`)));
+  if (!todo.length) return;
+  console.log(`tts: ${tts.engine}${tts.voice ? ` / ${tts.voice}` : ''}: generating ${todo.length} clip(s)...`);
+  if (tts.engine === 'say') {
+    for (const j of todo) {
+      const base = path.join(outDir, j.key);
+      fs.writeFileSync(`${base}.txt`, j.text);
+      run('say', ['-v', tts.voice, '-r', String(tts.rate), '-f', `${base}.txt`, '-o', `${base}.aiff`]);
+      run('afconvert', ['-f', 'WAVE', '-d', 'LEI16@48000', `${base}.aiff`, `${base}.wav`]);
+      fs.rmSync(`${base}.aiff`);
+      fs.rmSync(`${base}.txt`);
+    }
+    return;
+  }
+  // Write to a temp name first so a failed or rejected clip is never cached.
+  const jobFile = path.join(outDir, 'tts-jobs.json');
+  fs.writeFileSync(jobFile, JSON.stringify({
+    model: tts.model, voice: tts.voice, speed: tts.speed, instruct: tts.instruct, verify: tts.verify,
+    jobs: todo.map((j) => ({ text: j.text, ref: j.ref, out: path.join(outDir, `${j.key}.tmp.wav`) })),
+  }));
+  const out = run(VENV_PY, ['-I', path.join(ROOT, 'lib', 'tts.py'), jobFile], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
+  fs.rmSync(jobFile);
+  const bad = [];
+  for (const line of out.trim().split('\n').filter((l) => l.startsWith('{'))) {
+    const r = JSON.parse(line);
+    const job = todo.find((j) => r.out.endsWith(`${j.key}.tmp.wav`));
+    if (r.wer !== undefined && r.wer > MAX_WER) {
+      bad.push(`WER ${r.wer}\n      script: ${job.ref}\n      heard:  ${r.heard}`);
+      fs.rmSync(r.out);
+    } else {
+      fs.renameSync(r.out, path.join(outDir, `${job.key}.wav`));
+    }
+  }
+  if (bad.length) die(`speech check failed (clip skipped/garbled words; re-run to resample, or rephrase):\n  - ${bad.join('\n  - ')}`);
+  if (tts.verify) console.log(`tts: speech check passed (Whisper transcript within ${MAX_WER * 100}% word error)`);
 }
 
 // Remotion ships ffmpeg/ffprobe in a platform package; call it directly (no Homebrew ffmpeg needed).
@@ -101,13 +155,16 @@ function sayable(text, pronounce = {}) {
 function build(arg) {
   const { dir, spec } = resolveSpec(arg);
   validate(spec);
-  const voice = resolveVoice(spec);
-  const rate = spec.rate ?? 185;
+  const tts = resolveTts(spec);
   const pubRel = spec.slug;
   const pubDir = path.join(PUBLIC, pubRel);
   fs.mkdirSync(path.join(pubDir, 'assets'), { recursive: true });
 
-  const scenes = spec.scenes.map((s) => {
+  // Pass 1: every narration segment -> a cached clip key, then synthesize the missing ones in one batch.
+  const segs = spec.scenes.map((s) => splitSegments(s.narration).map((t) => (t ? { key: ttsKey(tts, sayable(t, spec.pronounce)), text: sayable(t, spec.pronounce), ref: t } : null)));
+  synthesize(segs.flat().filter(Boolean), tts, pubDir);
+
+  const scenes = spec.scenes.map((s, si) => {
     const scene = { ...s };
     let minFrames = 0;
     if (s.src) {
@@ -119,7 +176,7 @@ function build(arg) {
       if (s.type === 'clip') minFrames = Math.round(mediaSeconds(src) * FPS) + 20;
     }
     const segTexts = splitSegments(s.narration);
-    const audio = segTexts.map((t) => (t ? speak(sayable(t, spec.pronounce), { voice, rate, outDir: pubDir }) : null));
+    const audio = segs[si].map((j) => (j ? { key: j.key, seconds: wavSeconds(path.join(pubDir, `${j.key}.wav`)) } : null));
     const layout = layoutScene(segTexts, audio.map((a) => a?.seconds ?? 0), { fps: FPS, minFrames });
     scene.durationInFrames = layout.durationInFrames;
     scene.cues = layout.cues;
@@ -142,7 +199,7 @@ function build(arg) {
   fs.writeFileSync(path.join(buildDir, 'props.json'), JSON.stringify(props, null, 2));
 
   const total = scenes.reduce((a, s) => a + s.durationInFrames, 0) / FPS;
-  console.log(`voice: ${voice} @ ${rate} wpm`);
+  console.log(`voice: ${tts.engine} / ${tts.voice ?? 'default'}${tts.rate ? ` @ ${tts.rate} wpm` : ` @ ${tts.speed}x`}`);
   for (const s of scenes) console.log(`  ${s.id.padEnd(18)} ${s.type.padEnd(9)} ${(s.durationInFrames / FPS).toFixed(1).padStart(5)}s  cues=${s.cues.length}`);
   console.log(`total: ${total.toFixed(1)}s${spec.targetSeconds ? ` (target ${spec.targetSeconds}s, ${total > spec.targetSeconds * 1.05 ? 'OVER' : total < spec.targetSeconds * 0.85 ? 'UNDER' : 'ok'})` : ''}`);
   return { dir, spec, props, buildDir };
@@ -218,20 +275,31 @@ function init(slug) {
   console.log(file);
 }
 
+function setup() {
+  if (!fs.existsSync(VENV_PY)) run('uv', ['venv', '-q', '--python', '3.12', path.join(ROOT, '.venv')], { stdio: 'inherit' });
+  run('uv', ['pip', 'install', '-q', '--python', VENV_PY, '-r', path.join(ROOT, 'requirements.txt')], { stdio: 'inherit' });
+  // Warm-up downloads the Kokoro weights, the spaCy model misaki needs, and Whisper for the speech check.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-setup-'));
+  const tts = { engine: 'kokoro', ...ENGINES.kokoro, speed: 1, instruct: null, verify: true };
+  synthesize([{ key: 'warmup', text: 'Setup complete.', ref: 'Setup complete.' }], tts, tmp);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.log('setup ok: kokoro + speech check ready');
+}
+
 function doctor() {
   const checks = [
     ['say', () => run('which', ['say'])],
     ['afconvert', () => run('which', ['afconvert'])],
     ['afinfo', () => run('which', ['afinfo'])],
     ['magick (contact sheets)', () => run('which', ['magick'])],
+    ['neural TTS env (.venv)', () => { if (!fs.existsSync(VENV_PY)) throw new Error('run: node bin/cv.mjs setup'); }],
     ['node_modules', () => { if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) throw new Error('run npm ci'); }],
   ];
   let ok = true;
   for (const [name, fn] of checks) {
     try { fn(); console.log(`ok   ${name}`); } catch (e) { ok = false; console.log(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
   }
-  const voice = pickVoice(run('say', ['-v', '?']));
-  console.log(`voice: ${voice}${/Premium|Enhanced/.test(voice) ? '' : '  (tip: install a Premium voice in System Settings > Accessibility > Spoken Content)'}`);
+  console.log(`default tts: kokoro / ${ENGINES.kokoro.voice}  (alternatives: qwen3, chatterbox, say)`);
   console.log(`output dir: ${OUT_DIR}`);
   if (!ok) process.exit(1);
 }
@@ -245,11 +313,13 @@ switch (cmd) {
   case 'stills': await stills(rest[0]); break;
   case 'render': await render(rest[0], outArg); break;
   case 'doctor': doctor(); break;
+  case 'setup': setup(); break;
   case 'voices': console.log(run('say', ['-v', '?']).split('\n').filter((l) => / en_/.test(l)).join('\n')); break;
   default:
     console.log(`usage: cv <command>
   init <slug>             scaffold projects/<slug>/video.json
-  build <spec|slug>       narrate with say, compute timing -> build/props.json
+  setup                   create .venv with mlx-audio (Kokoro TTS + Whisper speech check)
+  build <spec|slug>       narrate (local TTS), verify speech, compute timing -> build/props.json
   stills <spec|slug>      build + one PNG per scene + contact.png for review
   render <spec|slug> [--out file.mp4]   build + render MP4 (+ .srt) to $CV_OUT_DIR
   doctor                  check prerequisites and chosen voice

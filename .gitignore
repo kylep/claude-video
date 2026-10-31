@@ -4,3 +4,4 @@ public/*
 projects/*/build/
 out/
 .DS_Store
+.venv/

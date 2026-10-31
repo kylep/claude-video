@@ -1,6 +1,6 @@
 ---
 name: tutorial-video
-description: Use when the user asks for a tutorial, explainer, walkthrough, demo or "how it works" video (narrated MP4), or to turn docs, a repo, a feature or a process into a short video. Builds it locally on macOS with the claude-video toolkit (~/gh/claude-video) using a JSON scene script, `say` narration and Remotion rendering, and saves the result to ~/gh/reports/video/.
+description: Use when the user asks for a tutorial, explainer, walkthrough, demo or "how it works" video (narrated MP4), or to turn docs, a repo, a feature or a process into a short video. Builds it locally on macOS with the claude-video toolkit (~/gh/claude-video) using a JSON scene script, free local neural narration (Kokoro) and Remotion rendering, and saves the result to ~/gh/reports/video/.
 ---
 
 # Tutorial video
@@ -9,7 +9,8 @@ Narrated 1080p tutorial videos made from a JSON script. The toolkit lives in
 `~/gh/claude-video` (private repo kylep/claude-video). Every video gets the same
 theme, scene layouts and timing rules, so you write **data, not animation code**.
 
-Pipeline: `video.json` → `say` speaks each narration segment → measured audio
+Pipeline: `video.json` → Kokoro (local neural TTS via mlx-audio) speaks each narration
+segment → Whisper transcribes it back and rejects garbled clips → measured audio
 lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/<slug>.mp4`.
 
 ## Workflow
@@ -17,11 +18,14 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 1. **Understand the subject first.** Read the code/docs you're explaining. A video
    with a wrong claim is worse than no video.
 2. **Scaffold:** `cd ~/gh/claude-video && node bin/cv.mjs init <slug>` and
-   edit `projects/<slug>/video.json`. If `node_modules` is missing, run `npm ci`.
-3. **Write the script** (rules below). Default length is 60s ≈ 150–165 spoken words.
+   edit `projects/<slug>/video.json`. If `node_modules` is missing, run `npm ci`;
+   if `.venv` is missing, run `node bin/cv.mjs setup` (one-time model download).
+3. **Write the script** (rules below). Default length is 60s ≈ 140–150 spoken words with Kokoro.
 4. **Build + check timing:** `node bin/cv.mjs build <slug>`. It prints each
    scene's length and the total against `targetSeconds`. Edit the narration
-   until it reports `ok`. Don't fake it by changing `rate` beyond 165–195.
+   until it reports `ok`. Trim words rather than pushing `speed` past 1.1.
+   If the speech check fails, the clip skipped or garbled words: re-run (it resamples)
+   or rephrase. Don't disable `verify` to get past it.
 5. **Look at it:** `node bin/cv.mjs stills <slug>`, then Read
    `projects/<slug>/build/stills/contact.png` (and individual PNGs if anything
    looks off). Fix overflow, crowding, orphans and empty-looking scenes, then re-run.
@@ -48,7 +52,7 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
   `highlight` is a 1-based line list. Explain the highlighted lines in narration.
 - **Mispronunciations:** add `"pronounce": {"Remotion": "Ree-motion"}`. This
   affects audio only; captions keep the real spelling. Listen-test unfamiliar
-  terms by running `say -v Samantha "word"`.
+  terms by running a one-scene spec and checking the Whisper transcript.
 
 ## Scene types
 
@@ -73,9 +77,18 @@ Recording permission. If it fails, ask the user to record instead of working aro
 
 ## Spec top-level
 
-`slug`, `title` (shown top-left on every scene), `targetSeconds`, `voice`
-(`"auto"` picks the best installed English voice: Premium > Enhanced > Samantha),
-`rate` (wpm, default 185), `accent` (hex), `captions` (bool), `pronounce`, `scenes`.
+`slug`, `title` (shown top-left on every scene), `targetSeconds`, `accent` (hex),
+`captions` (bool), `pronounce`, `scenes`, and the voice settings:
+
+| `tts` | default `voice` | notes |
+|---|---|---|
+| `kokoro` (default) | `af_heart` | Fast (~1s/clip warm), stable. Others: `af_bella`, `am_michael`, `am_fenrir`, `bf_emma`, `bm_george` |
+| `qwen3` | `Ryan` | More expressive; slower, autoregressive; supports `instruct` (style) |
+| `chatterbox` | built-in | Most expressive; slower, autoregressive |
+| `say` | best installed | macOS built-in; robotic. Uses `rate` (wpm) instead of `speed` |
+
+`speed` (neural, default 1.0) and `verify` (default true: Whisper speech check) apply to neural engines.
+Stick with kokoro/af_heart unless the user asks for a different voice; it's what keeps videos consistent.
 See `~/gh/claude-video/projects/how-it-works/video.json` for a complete example.
 
 ## When the layouts aren't enough
@@ -91,5 +104,8 @@ main and push.
 - A zod "Version mismatch" banner during render is expected (zod is pinned
   above Remotion's to clear a security advisory). Renders still work.
 - Fonts (Inter, JetBrains Mono) load from Google Fonts at render time, so rendering needs network.
+- Clips are cached by (engine, voice, speed, text) in `public/<slug>/`; editing one
+  sentence only re-synthesizes that segment.
+- Voice comparison samples: `~/gh/reports/video/voice-samples/`.
 - Output dir override: `CV_OUT_DIR=/path node bin/cv.mjs render <slug>` or `--out file.mp4`.
 - `node bin/cv.mjs doctor` checks prerequisites and shows which voice will be used.
