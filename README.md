@@ -2,6 +2,10 @@
 
 Spec-driven narrated tutorial videos, built locally on macOS by Claude Code.
 
+[![Watch: how claude-video works (60s, made with claude-video)](https://img.youtube.com/vi/Luvb_ftcjKQ/maxresdefault.jpg)](https://youtu.be/Luvb_ftcjKQ)
+
+*Watch the 60-second explainer above. It was made with this repo.*
+
 ```
 video.json ──► Kokoro TTS (per [[next]] segment) ──► Whisper check ──► measured timing + captions ──► Remotion ──► MP4 + SRT
 ```
