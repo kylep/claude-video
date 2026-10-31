@@ -10,13 +10,16 @@ export type Callout = { text: string; anchor: string; lit?: boolean };
 export type BoardItem = {
   // strip: highlight the joined holes (or whole rail) at each ref; flow: animated
   // current dots along the refs in order. Both show only while their step is active.
-  kind: 'pico' | 'wire' | 'resistor' | 'led' | 'transistor' | 'buzzer' | 'glow' | 'strip' | 'flow';
+  // remove: lifts out the placed part whose `at` matches (later scenes drop it).
+  kind: 'pico' | 'wire' | 'resistor' | 'led' | 'rgbled' | 'pot' | 'diode' | 'transistor' | 'buzzer'
+    | 'glow' | 'strip' | 'flow' | 'remove';
   at?: string[];      // holes the part's legs/ends sit in
   col?: number;       // pico: column of pin 1 (pins land in rows c and h)
   color?: string;     // wire colour (css) or LED colour name
   bands?: string[];   // resistor colour bands
   id?: string;        // target for glow items (LEDs, buzzer)
   on?: boolean;       // glow: false turns it off
+  angle?: number;     // pot: knob indicator angle in degrees (0 = toward the top)
 };
 export type BoardGroup = { label?: string; items: BoardItem[]; zoom?: boolean };
 

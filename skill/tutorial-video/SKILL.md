@@ -95,11 +95,16 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 `far+:N`, `far-:N`, `near+:N`, `near-:N` (far = top of screen). Kinds: `pico`
 (`col` of pin 1; pins land in rows c and h), `wire` (`at[2]`, `color`),
 `resistor` (`at[2]`, `bands[]`), `led` (`at[anode, cathode]`, `color`, `id`),
-`transistor` (`at[E, B, C]`), `buzzer` (`at[−, +]`, `id`). Effects that only
+`transistor` (`at[E, B, C]`), `buzzer` (`at[−, +]`, `id`), `rgbled` (`at[R, common,
+G, B]`, `id`; `glow` with `color` tints it), `pot` (`at[end, wiper, end]`,
+`angle`), `diode` (`at[anode, cathode]`; band drawn at the cathode). Effects that only
 show during their step: `glow` (`id`, `on`; lights an LED or animates a
 buzzer), `strip` (`at[1]`; highlights the five joined holes, or a whole rail),
 `flow` (`at[≥2]`; current dots along the refs, following wires). Parts carry
-over into later breadboard scenes; `"fresh": true` starts empty. Use one
+over into later breadboard scenes; `"fresh": true` starts empty. `remove`
+(`at` = the part's holes) lifts a previously placed part out and drops it from
+later scenes, with its holes ringed and tagged, which is useful for "upgrade
+the last build" videos. Use one
 `[[next]]` per group, as with bullets.
 
 Every scene needs `id` (unique) and `narration`. `src` paths are relative to the

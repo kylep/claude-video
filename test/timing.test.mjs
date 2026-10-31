@@ -128,3 +128,15 @@ test('layoutScene inserts pause silence and keeps the question caption up', asyn
   assert.equal(r.captions[0].end, 150);  // "Q?" stays on screen through the pause
   assert.equal(r.durationInFrames, 180);
 });
+
+test('boardBase applies remove steps', async () => {
+  const { boardBase } = await import('../lib/timing.mjs');
+  const led = { kind: 'led', at: ['e28', 'e29'] };
+  const wire = { kind: 'wire', at: ['a29', 'near-:29'] };
+  const scenes = [
+    { type: 'breadboard', groups: [{ items: [led, wire] }] },
+    { type: 'breadboard', groups: [{ items: [{ kind: 'remove', at: ['e28', 'e29'] }] }] },
+    { type: 'breadboard', groups: [] },
+  ];
+  assert.deepEqual(boardBase(scenes, 2), [wire]);
+});

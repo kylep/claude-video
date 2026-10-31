@@ -105,7 +105,8 @@ function wireCurve(a: Pt, b: Pt) {
   return { mx: (a.x + b.x) / 2 - (vertical ? lift : 0), my: (a.y + b.y) / 2 - (vertical ? 0 : lift), lift, dist };
 }
 
-const TRANSIENT = new Set(['glow', 'strip', 'flow']);
+const TRANSIENT = new Set(['glow', 'strip', 'flow', 'remove']);
+const sameHoles = (a: string[] = [], b: string[] = []) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 // The holes joined underneath a hole (its 5-hole column half), or a whole rail.
 function stripBox(ref: string) {
@@ -327,6 +328,66 @@ const Part: React.FC<{ it: BoardItem; p: number; lit: number; accent: string }> 
         </g>,
       );
     }
+    case 'rgbled': {
+      // Clear 4-leg LED seen from above: legs R, common (+), G, B.
+      const pts = it.at!.map(holePoint);
+      const cx = (pts[1].x + pts[2].x) / 2; const cy = (pts[0].y + pts[3].y) / 2;
+      const color = it.color ?? '#ffffff';
+      return g(
+        <g>
+          {lit > 0 && <circle cx={cx} cy={cy} r={P * 2.2 * lit} fill={color} opacity={0.35 * lit} />}
+          <circle cx={cx} cy={cy} r={P * 1.25} fill={lit > 0 ? color : '#eef3f7'} fillOpacity={lit > 0 ? 0.55 + 0.45 * lit : 0.85}
+            stroke="rgba(0,0,0,.3)" strokeWidth={2} />
+          <circle cx={cx - P * 0.4} cy={cy - P * 0.4} r={P * 0.3} fill="#fff" opacity={0.6} />
+          {pts.map((q, i) => <circle key={i} cx={q.x} cy={q.y} r={3.5} fill="#9a9a9a" />)}
+          {['R', '+', 'G', 'B'].map((l, i) => (
+            <text key={l} x={pts[i].x} y={pts[i].y - P * 1.45} fontSize={13} fontWeight={800} textAnchor="middle"
+              fill={['#d6453d', '#3b3a36', '#2f9e4f', '#2d63d1'][i]} fontFamily={fonts.mono}>{l}</text>
+          ))}
+        </g>,
+      );
+    }
+    case 'pot': {
+      // Potentiometer from above: legs in a row, square body and round knob
+      // hanging toward the viewer (down the screen), over the centre channel.
+      const pts = it.at!.map(holePoint);
+      const mid = pts[1];
+      const bw = P * 4.6; const bh = P * 4.2;
+      const bx = mid.x - bw / 2; const by = mid.y + P * 0.35;
+      const kx = mid.x; const ky = by + bh / 2;
+      const ang = ((it.angle ?? 0) * Math.PI) / 180;
+      return g(
+        <g>
+          <rect x={bx} y={by} width={bw} height={bh} rx={6} fill="#2f6fb3" stroke="#1f4f86" strokeWidth={2} />
+          <circle cx={kx} cy={ky} r={P * 1.45} fill="#2a2b2e" stroke="#111" strokeWidth={2} />
+          {Array.from({ length: 18 }, (_, i) => {
+            const a = (i / 18) * Math.PI * 2;
+            return <line key={i} x1={kx + Math.cos(a) * P * 1.15} y1={ky + Math.sin(a) * P * 1.15}
+              x2={kx + Math.cos(a) * P * 1.42} y2={ky + Math.sin(a) * P * 1.42} stroke="#444" strokeWidth={2} />;
+          })}
+          <line x1={kx} y1={ky} x2={kx + Math.sin(ang) * P * 1.1} y2={ky - Math.cos(ang) * P * 1.1}
+            stroke="#f2f2f2" strokeWidth={4} strokeLinecap="round" />
+          {pts.map((q, i) => <circle key={i} cx={q.x} cy={q.y} r={4} fill="#cfcfcf" stroke="#888" />)}
+        </g>,
+      );
+    }
+    case 'diode': {
+      // 1N4001: black body, silver band at the cathode (second hole).
+      const [a, k] = it.at!.map(holePoint);
+      const mx = (a.x + k.x) / 2; const my = (a.y + k.y) / 2;
+      const ang = (Math.atan2(k.y - a.y, k.x - a.x) * 180) / Math.PI;
+      return g(
+        <g>
+          <line x1={a.x} y1={a.y} x2={k.x} y2={k.y} stroke="#b9b9b9" strokeWidth={3.5} />
+          <circle cx={a.x} cy={a.y} r={5} fill="#cfcfcf" />
+          <circle cx={k.x} cy={k.y} r={5} fill="#cfcfcf" />
+          <g transform={`translate(${mx} ${my}) rotate(${ang})`}>
+            <rect x={-22} y={-9} width={44} height={18} rx={5} fill="#1d1d1f" />
+            <rect x={12} y={-9} width={6} height={18} fill="#d8d8d8" />
+          </g>
+        </g>,
+      );
+    }
     case 'buzzer': {
       const [tl, br] = itemPoints(it);
       const cx = (tl.x + br.x) / 2; const cy = (tl.y + br.y) / 2; const r = (br.x - tl.x) / 2;
@@ -371,10 +432,11 @@ function occupied(items: BoardItem[]): Pt[] {
 const HoleTags: React.FC<{ items: BoardItem[]; others: BoardItem[]; p: number; accent: string }> = ({ items, others, p, accent }) => {
   // Multi-leg parts in one row (the transistor) get a single "j54–j56" tag.
   const isGroupTag = (it: BoardItem) => it.kind === 'transistor';
-  const refs = Array.from(new Set(items.flatMap((it) => (TRANSIENT.has(it.kind) || isGroupTag(it) ? [] : it.at ?? []))))
+  const tagged = (it: BoardItem) => !TRANSIENT.has(it.kind) || it.kind === 'remove';
+  const refs = Array.from(new Set(items.flatMap((it) => (!tagged(it) || isGroupTag(it) ? [] : it.at ?? []))))
     .filter((r) => /^[a-j]\d+$/.test(r));
   const holes = refs.map((r) => ({ ref: r, pt: holePoint(r) }));
-  const rings = Array.from(new Set(items.flatMap((it) => (TRANSIENT.has(it.kind) ? [] : it.at ?? []))))
+  const rings = Array.from(new Set(items.flatMap((it) => (!tagged(it) ? [] : it.at ?? []))))
     .filter((r) => /^[a-j]\d+$/.test(r)).map((r) => ({ ref: r, pt: holePoint(r) }));
   const taken: Pt[] = [...holes.map((h) => h.pt), ...occupied([...items, ...others])];
   // Tags are ~1.5 holes wide, so check their left and right ends too.
@@ -454,6 +516,7 @@ export const BreadboardScene: React.FC<Props> = ({ scene, accent }) => {
 
   // Glow state per part id, from glow items in fired groups (later groups win).
   const lit: Record<string, number> = {};
+  const glowColor: Record<string, string> = {};
   groups.forEach((gr, i) => {
     for (const it of gr.items) {
       if (it.kind !== 'glow' || !it.id) continue;
@@ -462,8 +525,17 @@ export const BreadboardScene: React.FC<Props> = ({ scene, accent }) => {
       const on = it.on !== false;
       const was = lit[it.id] ?? 0;
       lit[it.id] = on ? Math.max(was, k) : was * (1 - k);
+      if (it.color) glowColor[it.id] = it.color;
     }
   });
+  // When (if ever) each part is lifted out by a `remove` step in this scene.
+  // Only steps after the one that placed the part (placedIn = -1 for earlier scenes).
+  const removedAt = (it: BoardItem, placedIn: number): number | undefined => {
+    for (let i = placedIn + 1; i < groups.length; i++) {
+      if (groups[i].items.some((r) => r.kind === 'remove' && sameHoles(r.at, it.at))) return cueAt(i);
+    }
+    return undefined;
+  };
   // Buzzer waves cycle once a second while it's on.
   const buzzPhase = (frame % fps) / fps;
   const litValue = (it: BoardItem) => {
@@ -472,14 +544,18 @@ export const BreadboardScene: React.FC<Props> = ({ scene, accent }) => {
   };
 
   const placed = [
-    ...base.map((it) => ({ it, p: 1 })),
+    ...base.map((it) => ({ it, p: 1, from: -1 })),
     ...groups.flatMap((gr, i) => gr.items.filter((it) => !TRANSIENT.has(it.kind)).map((it) => {
       const at = cueAt(i);
-      return { it, p: frame < at ? 0 : springAt(at) };
+      return { it, p: frame < at ? 0 : springAt(at), from: i };
     })),
-  ];
+  ].map(({ it, p, from }) => {
+    const r = removedAt(it, from);
+    const out = r !== undefined && frame >= r ? springAt(r) : 0;
+    return { it: it.kind === 'rgbled' && it.id && glowColor[it.id] ? { ...it, color: glowColor[it.id] } : it, p, out };
+  }).filter((x) => x.out < 0.98);
   // Draw order: board-level parts first, wires last so they sit on top.
-  const order: Record<string, number> = { pico: 0, resistor: 1, transistor: 2, led: 3, buzzer: 4, wire: 5 };
+  const order: Record<string, number> = { pico: 0, resistor: 1, diode: 1, transistor: 2, led: 3, rgbled: 3, pot: 4, buzzer: 4, wire: 5 };
   placed.sort((a, b) => (order[a.it.kind] ?? 9) - (order[b.it.kind] ?? 9));
 
   const label = active >= 0 ? groups[active].label : undefined;
@@ -498,8 +574,10 @@ export const BreadboardScene: React.FC<Props> = ({ scene, accent }) => {
           preserveAspectRatio="xMidYMid meet">
           <Board />
           {active >= 0 && <Strips items={groups[active].items} p={springAt(cueAt(active))} frame={frame} accent={accent} />}
-          {placed.map(({ it, p }, i) => (
-            <Part key={i} it={it} p={p} accent={accent} lit={litValue(it)} />
+          {placed.map(({ it, p, out }, i) => (
+            <g key={i} opacity={1 - out} transform={`translate(0 ${-out * 70})`}>
+              <Part it={it} p={p} accent={accent} lit={litValue(it)} />
+            </g>
           ))}
           {active >= 0 && (
             <Flows items={groups[active].items} p={springAt(cueAt(active) + 6)} frame={frame}

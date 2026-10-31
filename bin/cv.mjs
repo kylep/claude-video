@@ -14,7 +14,7 @@ const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports
 const FPS = 30;
 const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'outro'];
 const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts' };
-const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'transistor', 'buzzer', 'glow', 'strip', 'flow'];
+const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'rgbled', 'pot', 'diode', 'transistor', 'buzzer', 'glow', 'strip', 'flow', 'remove'];
 const ANCHORS = { led: ['dome', 'anode', 'cathode', 'flat'], resistor: ['bands', 'left', 'right', 'body'], transistor: ['flat', 'e', 'b', 'c'] };
 const BOARD_REF = /^(?:[a-j](?:[1-9]|[1-5]\d|6[0-3])|(?:far|near)[+-]:(?:[1-9]|[1-5]\d|6[0-3]))$/;
 const VENV_PY = path.join(ROOT, '.venv', 'bin', 'python');
@@ -79,9 +79,10 @@ function validate(spec) {
           const where = `${at}: groups[${gi}].items[${ii}]`;
           if (!BOARD_KINDS.includes(it.kind)) errs.push(`${where}: kind must be one of ${BOARD_KINDS.join(', ')}`);
           for (const ref of it.at ?? []) if (!BOARD_REF.test(ref)) errs.push(`${where}: bad hole "${ref}" (a1..j63 or far+:N / near-:N)`);
-          const need = { wire: 2, resistor: 2, led: 2, transistor: 3, buzzer: 2, strip: 1 }[it.kind];
+          const need = { wire: 2, resistor: 2, led: 2, rgbled: 4, pot: 3, diode: 2, transistor: 3, buzzer: 2, strip: 1 }[it.kind];
           if (need && (it.at ?? []).length !== need) errs.push(`${where}: ${it.kind} needs ${need} holes in "at"`);
           if (it.kind === 'flow' && (it.at ?? []).length < 2) errs.push(`${where}: flow needs at least 2 points in "at"`);
+          if (it.kind === 'remove' && !(it.at ?? []).length) errs.push(`${where}: remove needs the part's "at" holes`);
           if (it.kind === 'glow' && !it.id) errs.push(`${where}: glow needs an id`);
         });
       });
