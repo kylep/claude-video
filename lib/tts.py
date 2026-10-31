@@ -45,6 +45,9 @@ def main():
         kwargs = {"text": job["text"], "speed": spec.get("speed", 1.0), "verbose": False}
         if spec.get("lang_code"):
             kwargs["lang_code"] = spec["lang_code"]
+        elif "kokoro" in spec["model"].lower() and spec.get("voice"):
+            # Kokoro voice ids start with their language: a=American, b=British, ...
+            kwargs["lang_code"] = spec["voice"][0]
         if spec.get("voice"):
             kwargs["voice"] = spec["voice"]
         if spec.get("instruct"):
