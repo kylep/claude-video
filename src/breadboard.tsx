@@ -95,14 +95,18 @@ function focusBox(items: BoardItem[]): { x: number; y: number; w: number; h: num
   return { x: x0, y, w: x1 - x0, h };
 }
 
-// Control point of a jumper's arc. Mostly-horizontal wires arc upward;
+// Control point of a jumper's arc. Mostly-horizontal wires arc away from the channel;
 // mostly-vertical ones (e.g. down to a rail) bow left so they don't cover
 // parts in their own column.
-function wireCurve(a: Pt, b: Pt) {
+function wireCurve(a: Pt, b: Pt, bow?: number) {
   const dist = Math.hypot(b.x - a.x, b.y - a.y);
   const vertical = Math.abs(b.y - a.y) > Math.abs(b.x - a.x) * 2;
-  const lift = vertical ? Math.max(P * 2.6, Math.min(70, 18 + dist * 0.18)) : Math.min(70, 18 + dist * 0.18);
-  return { mx: (a.x + b.x) / 2 - (vertical ? lift : 0), my: (a.y + b.y) / 2 - (vertical ? 0 : lift), lift, dist };
+  const auto = vertical ? Math.max(P * 2.6, Math.min(70, 18 + dist * 0.18)) : Math.min(70, 18 + dist * 0.18);
+  const lift = bow ?? auto;
+  // Wires lying in the near half arc toward the viewer, over the empty near
+  // rails, so they never cover parts standing by the centre channel.
+  const near = a.y > Y.channel && b.y > Y.channel;
+  return { mx: (a.x + b.x) / 2 - (vertical ? lift : 0), my: (a.y + b.y) / 2 + (vertical ? 0 : near ? lift : -lift), lift, dist };
 }
 
 const TRANSIENT = new Set(['glow', 'strip', 'flow', 'remove']);
@@ -144,7 +148,7 @@ function flowPolyline(refs: string[], wires: BoardItem[]): Pt[] {
     const w = wires.find((it) => it.at && ((it.at[0] === refs[i - 1] && it.at[1] === refs[i]) || (it.at[1] === refs[i - 1] && it.at[0] === refs[i])));
     if (w) {
       const [wa, wb] = w.at!.map(holePoint);
-      const { mx, my } = wireCurve(wa, wb);
+      const { mx, my } = wireCurve(wa, wb, w.bow);
       const fwd = w.at![0] === refs[i - 1];
       for (let k = 1; k <= 24; k++) {
         const t0 = k / 24; const t = fwd ? t0 : 1 - t0;
@@ -264,7 +268,7 @@ const Part: React.FC<{ it: BoardItem; p: number; lit: number; accent: string }> 
     }
     case 'wire': {
       const [a, b] = it.at!.map(holePoint);
-      const { mx, my, lift, dist } = wireCurve(a, b);
+      const { mx, my, lift, dist } = wireCurve(a, b, it.bow);
       const d = `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
       const len = dist * 1.25 + lift;
       const color = it.color ?? '#f5a623';

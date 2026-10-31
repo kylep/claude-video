@@ -19,6 +19,7 @@ export type BoardItem = {
   bands?: string[];   // resistor colour bands
   id?: string;        // target for glow items (LEDs, buzzer)
   on?: boolean;       // glow: false turns it off
+  bow?: number;      // wire: arc depth in SVG units (default from length); spreads parallel wires apart
   angle?: number;     // pot: knob indicator angle in degrees (0 = toward the top)
 };
 export type BoardGroup = { label?: string; items: BoardItem[]; zoom?: boolean };

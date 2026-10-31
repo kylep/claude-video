@@ -93,7 +93,7 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 
 **Breadboard items** (`groups[].items[]`): holes are `a1`…`j63`, rails are
 `far+:N`, `far-:N`, `near+:N`, `near-:N` (far = top of screen). Kinds: `pico`
-(`col` of pin 1; pins land in rows c and h), `wire` (`at[2]`, `color`),
+(`col` of pin 1; pins land in rows c and h), `wire` (`at[2]`, `color`, `bow`),
 `resistor` (`at[2]`, `bands[]`), `led` (`at[anode, cathode]`, `color`, `id`),
 `transistor` (`at[E, B, C]`), `buzzer` (`at[−, +]`, `id`), `rgbled` (`at[R, common,
 G, B]`, `id`; `glow` with `color` tints it), `pot` (`at[end, wiper, end]`,
@@ -106,6 +106,22 @@ over into later breadboard scenes; `"fresh": true` starts empty. `remove`
 later scenes, with its holes ringed and tagged, which is useful for "upgrade
 the last build" videos. Use one
 `[[next]]` per group, as with bullets.
+
+**Laying out a build** (don't narrate any of this; just place parts so):
+- Ask what the viewer is starting from. A from-scratch build beats a long
+  run of "pull this out" steps (Kyle, 2026-10-31).
+- The part people watch (the light) goes toward the end of the board, and no
+  wire crosses over it. Wires should not pass over any part if avoidable.
+- Resistors standing across the centre channel (`f30`→`e30`) look clean.
+- Kit jumpers are long: prefer long runs along the board edges (rows a/b,
+  i/j) over short hops, and order a group of parallel wires so they nest
+  instead of crossing (turn a part around if that helps).
+- Wires lying in the near half sag toward the viewer; far-half wires arc
+  toward the far rails. `bow` (SVG units, about twice the sag) sets one
+  wire's depth: give parallel wires distinct bows so they read as separate strands.
+- Check the wiring as a netlist (union the 5-hole strips through every wire,
+  then check each part's legs and the forbidden pins) before rendering, and
+  keep any written guide generated from the same holes as the video.
 
 Every scene needs `id` (unique) and `narration`. `src` paths are relative to the
 spec file. Keep assets beside it in `projects/<slug>/`.
