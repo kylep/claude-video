@@ -1,17 +1,58 @@
 {
   "engine": "kokoro",
   "pool": [
-    "af_heart", "af_bella", "af_nicole", "af_sarah", "af_nova", "af_sky", "af_jessica", "af_river", "af_kore", "af_aoede", "af_alloy",
-    "am_michael", "am_fenrir", "am_adam", "am_eric", "am_liam", "am_onyx", "am_puck", "am_echo",
-    "bf_emma", "bf_isabella", "bf_alice", "bf_lily",
-    "bm_george", "bm_fable", "bm_daniel", "bm_lewis"
+    "af_heart",
+    "af_bella",
+    "af_nicole",
+    "af_sarah",
+    "af_nova",
+    "af_sky",
+    "af_jessica",
+    "af_river",
+    "af_kore",
+    "af_aoede",
+    "af_alloy",
+    "am_michael",
+    "am_fenrir",
+    "am_adam",
+    "am_eric",
+    "am_liam",
+    "am_onyx",
+    "am_puck",
+    "am_echo",
+    "bf_emma",
+    "bf_isabella",
+    "bf_alice",
+    "bf_lily",
+    "bm_george",
+    "bm_fable",
+    "bm_daniel",
+    "bm_lewis"
   ],
   "excluded": {},
   "preferred": {
     "af_heart": "2026-10-31 user: 'much much much better' than macOS say (first Kokoro render)"
   },
   "feedback": [
-    { "date": "2026-10-31", "voice": "say/Samantha", "note": "Rejected: 'the voice sucks'. Robotic. Don't default to macOS say." },
-    { "date": "2026-10-31", "voice": "kokoro/af_heart", "note": "'much much much better'" }
+    {
+      "date": "2026-10-31",
+      "voice": "say/Samantha",
+      "note": "Rejected: 'the voice sucks'. Robotic. Don't default to macOS say."
+    },
+    {
+      "date": "2026-10-31",
+      "voice": "kokoro/af_heart",
+      "note": "'much much much better'"
+    },
+    {
+      "date": "2026-10-31",
+      "voice": "kokoro/am_michael",
+      "note": "'kind of boring' (for a kids' learning/quiz narrator)"
+    },
+    {
+      "date": "2026-10-31",
+      "voice": "kokoro/am_puck",
+      "note": "'playful sounds right' (chosen for the kids' learning + quiz part)"
+    }
   ]
 }
