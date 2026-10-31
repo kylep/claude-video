@@ -109,3 +109,22 @@ test('boardBase drops strip and flow effects', async () => {
   ];
   assert.deepEqual(boardBase(scenes, 1), [wire]);
 });
+
+test('splitPauses splits a segment into spoken parts with silences', async () => {
+  const { splitPauses } = await import('../lib/timing.mjs');
+  assert.deepEqual(splitPauses('Which leg is plus? [[pause 4]] The long leg.'), [
+    { text: 'Which leg is plus?', pauseAfter: 4 },
+    { text: 'The long leg.', pauseAfter: 0 },
+  ]);
+  assert.deepEqual(splitPauses('No pauses here.'), [{ text: 'No pauses here.', pauseAfter: 0 }]);
+  assert.deepEqual(splitPauses('Think. [[pause 2.5]]'), [{ text: 'Think.', pauseAfter: 2.5 }, { text: '', pauseAfter: 0 }]);
+});
+
+test('layoutScene inserts pause silence and keeps the question caption up', async () => {
+  const fps = 30;
+  const r = layoutScene(['Q?', ''], [[{ text: 'Q?', seconds: 1, pauseAfter: 4 }, { text: 'A.', seconds: 1, pauseAfter: 0 }], 0],
+    { fps, leadIn: 0, gap: 0, tail: 0 });
+  assert.deepEqual(r.segments.map((s) => [s.part, s.from]), [[0, 0], [1, 150]]);
+  assert.equal(r.captions[0].end, 150);  // "Q?" stays on screen through the pause
+  assert.equal(r.durationInFrames, 180);
+});

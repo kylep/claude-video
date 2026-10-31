@@ -61,6 +61,12 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
   metal), **LEDs** → "L E Dees", **JSON** → "jay-sawn" (it spelled out
   "J S O N"). A spec's `pronounce` overrides them. Add new always-wrong words
   there, not per spec.
+- **Pauses:** `[[pause 4]]` anywhere in narration inserts that many seconds of
+  silence; the caption before it stays on screen. Whenever the narration asks
+  the viewer something (quizzes, "what do you think happens?"), pause **3–5 s**
+  before the answer. Kids especially need the time, and answering straight
+  away defeats the question. Example:
+  `[[next]] Which LED leg is plus? [[pause 4]] The long leg.`
 - **Standalone:** a video can't ask for anything that only works in a chat with
   an agent ("send a photo for a second look"). End with something the viewer
   can do alone.

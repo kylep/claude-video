@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { boardBase, layoutScene, pickRandomVoice, pickVoice, sayable, speechRanges, splitSegments, toSrt } from '../lib/timing.mjs';
+import { boardBase, layoutScene, pickRandomVoice, pickVoice, sayable, speechRanges, splitPauses, splitSegments, toSrt } from '../lib/timing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -194,8 +194,11 @@ function build(arg) {
   fs.mkdirSync(path.join(pubDir, 'assets'), { recursive: true });
 
   // Pass 1: every narration segment -> a cached clip key, then synthesize the missing ones in one batch.
-  const segs = spec.scenes.map((s) => splitSegments(s.narration).map((t) => (t ? { key: ttsKey(tts, sayable(t, spec.pronounce)), text: sayable(t, spec.pronounce), ref: t } : null)));
-  synthesize(segs.flat().filter(Boolean), tts, pubDir);
+  // segs[scene][segment] = spoken parts, split on [[pause N]].
+  const segs = spec.scenes.map((s) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
+    ? { key: ttsKey(tts, sayable(p.text, spec.pronounce)), text: sayable(p.text, spec.pronounce), ref: p.text, pauseAfter: p.pauseAfter }
+    : { key: null, ref: '', pauseAfter: p.pauseAfter }))));
+  synthesize(segs.flat(2).filter((j) => j.key), tts, pubDir);
 
   const scenes = spec.scenes.map((s, si) => {
     const scene = { ...s };
@@ -210,12 +213,15 @@ function build(arg) {
     }
     if (s.type === 'breadboard') scene.base = boardBase(spec.scenes, si);
     const segTexts = splitSegments(s.narration);
-    const audio = segs[si].map((j) => (j ? { key: j.key, seconds: wavSeconds(path.join(pubDir, `${j.key}.wav`)) } : null));
-    const layout = layoutScene(segTexts, audio.map((a) => a?.seconds ?? 0), { fps: FPS, minFrames });
+    const audio = segs[si].map((parts) => parts.map((j) => ({
+      key: j.key, text: j.ref, pauseAfter: j.pauseAfter,
+      seconds: j.key ? wavSeconds(path.join(pubDir, `${j.key}.wav`)) : 0,
+    })));
+    const layout = layoutScene(segTexts, audio, { fps: FPS, minFrames });
     scene.durationInFrames = layout.durationInFrames;
     scene.cues = layout.cues;
     scene.captions = layout.captions;
-    scene.segments = layout.segments.map((seg) => ({ ...seg, audio: `${pubRel}/${audio[seg.index].key}.wav` }));
+    scene.segments = layout.segments.map((seg) => ({ ...seg, audio: `${pubRel}/${audio[seg.index][seg.part].key}.wav` }));
     return scene;
   });
 
