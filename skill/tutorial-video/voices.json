@@ -52,7 +52,12 @@
     {
       "date": "2026-10-31",
       "voice": "kokoro/am_puck",
-      "note": "'playful sounds right' (chosen for the kids' learning + quiz part)"
+      "note": "'playful sounds right' on paper, then 'ehhh' after hearing it; not chosen"
+    },
+    {
+      "date": "2026-10-31",
+      "voice": "kokoro/bf_emma",
+      "note": "Chosen for the kids' learning + quiz narrator after am_michael and am_puck"
     }
   ]
 }
