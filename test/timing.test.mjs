@@ -53,3 +53,14 @@ test('pickVoice prefers premium, falls back to Samantha', () => {
   assert.equal(pickVoice(listing), 'Zoe (Premium)');
   assert.equal(pickVoice('Samantha            en_US    # Hi'), 'Samantha');
 });
+
+import { pickRandomVoice } from '../lib/timing.mjs';
+
+test('pickRandomVoice skips excluded and weights preferred', () => {
+  const cfg = { pool: ['a', 'b', 'c'], excluded: { b: 'no' }, preferred: { c: 'yes' } };
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) seen.add(pickRandomVoice(cfg, () => i / 4));
+  assert.deepEqual([...seen].sort(), ['a', 'c']);
+  assert.equal(pickRandomVoice(cfg, () => 0.99), 'c');
+  assert.throws(() => pickRandomVoice({ pool: ['a'], excluded: { a: 'x' } }));
+});

@@ -2,8 +2,9 @@
   "slug": "",
   "title": "Video title",
   "targetSeconds": 60,
+  "tts": "kokoro",
   "voice": "auto",
-  "rate": 185,
+  "speed": 1.0,
   "accent": "#d97757",
   "captions": true,
   "pronounce": {},
@@ -19,7 +20,11 @@
       "id": "steps",
       "type": "bullets",
       "heading": "Three things",
-      "bullets": ["First point", "Second point", "Third point"],
+      "bullets": [
+        "First point",
+        "Second point",
+        "Third point"
+      ],
       "narration": "Lead-in sentence. [[next]] First point, spoken. [[next]] Second point. [[next]] Third point."
     },
     {

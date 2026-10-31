@@ -82,13 +82,34 @@ Recording permission. If it fails, ask the user to record instead of working aro
 
 | `tts` | default `voice` | notes |
 |---|---|---|
-| `kokoro` (default) | `af_heart` | Fast (~1s/clip warm), stable. Others: `af_bella`, `am_michael`, `am_fenrir`, `bf_emma`, `bm_george` |
+| `kokoro` (default) | random from `voices.json` | Fast (~1s/clip warm), stable. 27 English voices |
 | `qwen3` | `Ryan` | More expressive; slower, autoregressive; supports `instruct` (style) |
 | `chatterbox` | built-in | Most expressive; slower, autoregressive |
 | `say` | best installed | macOS built-in; robotic. Uses `rate` (wpm) instead of `speed` |
 
 `speed` (neural, default 1.0) and `verify` (default true: Whisper speech check) apply to neural engines.
-Stick with kokoro/af_heart unless the user asks for a different voice; it's what keeps videos consistent.
+
+## Voices
+
+- **Random unless specified.** If the user names a voice, set `"voice"`. Otherwise leave it out:
+  `cv init`/`cv build` pick a random English Kokoro voice from `voices.json` (never `excluded`,
+  `preferred` 3x as likely) and **write it into video.json**, so rebuilds stay on that voice.
+  To re-roll, delete the `"voice"` line.
+- Every video shows `voice: <name>` bottom-right during the opening scene (automatic).
+- Kokoro ids: first letter = accent (`a` American, `b` British), second = `f`/`m`.
+  Samples of all of them are in `~/gh/reports/video/voice-samples/kokoro/`.
+
+### Voice feedback → save it here
+
+When the user gives feedback on a voice ("that voice is great", "never use X", "too fast"),
+record it in `voices.json` **in the repo** (`~/gh/claude-video/skill/tutorial-video/voices.json`):
+
+1. Append `{"date", "voice", "note"}` to `feedback`, quoting the user's words.
+2. Clear dislikes → add to `excluded` (`"voice": "reason"`). Clear likes → `preferred`.
+   Mixed or vague feedback goes only in `feedback`.
+3. Commit + push the repo, then run `~/gh/claude-video/scripts/deploy-skill.sh`.
+
+Read `feedback` before choosing a non-default engine or voice; it overrides general reputation.
 See `~/gh/claude-video/projects/how-it-works/video.json` for a complete example.
 
 ## When the layouts aren't enough
@@ -99,6 +120,12 @@ Add or change a scene component in `src/scenes.tsx`, register it in
 Run `npm run typecheck && npm test` before committing. Commit straight to
 main and push.
 
+## Editing this skill
+
+The source of truth is `~/gh/claude-video/skill/tutorial-video/`. The copy in
+`~/.claude/skills/tutorial-video/` is deployed by `scripts/deploy-skill.sh`, which
+overwrites it. Never edit the deployed copy; edit the repo, commit, then deploy.
+
 ## Gotchas
 
 - A zod "Version mismatch" banner during render is expected (zod is pinned
@@ -108,4 +135,4 @@ main and push.
   sentence only re-synthesizes that segment.
 - Voice comparison samples: `~/gh/reports/video/voice-samples/`.
 - Output dir override: `CV_OUT_DIR=/path node bin/cv.mjs render <slug>` or `--out file.mp4`.
-- `node bin/cv.mjs doctor` checks prerequisites and shows which voice will be used.
+- `node bin/cv.mjs doctor` checks prerequisites.

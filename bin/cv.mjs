@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { layoutScene, pickVoice, splitSegments, toSrt } from '../lib/timing.mjs';
+import { layoutScene, pickRandomVoice, pickVoice, splitSegments, toSrt } from '../lib/timing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -24,6 +24,9 @@ const ENGINES = {
   say: {},
 };
 const MAX_WER = 0.2;
+// Voice pool + Kyle's voice feedback live with the skill so feedback steers random picks.
+const VOICES_FILE = path.join(ROOT, 'skill', 'tutorial-video', 'voices.json');
+const randomVoice = () => pickRandomVoice(JSON.parse(fs.readFileSync(VOICES_FILE, 'utf8')));
 
 const die = (msg) => { console.error(`cv: ${msg}`); process.exit(1); };
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -72,6 +75,17 @@ function validate(spec) {
 }
 
 let sayVoiceCache;
+// No voice in the spec: pick a random kokoro voice and write it back, so rebuilds,
+// stills and the final render all use the same (cached) voice.
+function pinVoice(file, spec) {
+  if ((spec.tts ?? 'kokoro') !== 'kokoro' || (spec.voice && spec.voice !== 'auto')) return;
+  spec.voice = randomVoice();
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  raw.voice = spec.voice;
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n');
+  console.log(`voice: randomly picked ${spec.voice} (saved to ${path.relative(ROOT, file)}; set "voice" to override)`);
+}
+
 function resolveTts(spec) {
   const engine = spec.tts ?? 'kokoro';
   if (engine === 'say') {
@@ -153,8 +167,9 @@ function sayable(text, pronounce = {}) {
 
 // Build props.json: narration audio per [[next]] segment, cue frames, captions.
 function build(arg) {
-  const { dir, spec } = resolveSpec(arg);
+  const { file, dir, spec } = resolveSpec(arg);
   validate(spec);
+  pinVoice(file, spec);
   const tts = resolveTts(spec);
   const pubRel = spec.slug;
   const pubDir = path.join(PUBLIC, pubRel);
@@ -192,6 +207,7 @@ function build(arg) {
     height: 1080,
     accent: spec.accent ?? '#d97757',
     showCaptions: spec.captions ?? true,
+    voiceLabel: tts.engine === 'kokoro' ? tts.voice : `${tts.engine}/${tts.voice ?? 'default'}`,
     scenes,
   };
   const buildDir = path.join(dir, 'build');
@@ -271,6 +287,7 @@ function init(slug) {
   fs.mkdirSync(dir, { recursive: true });
   const tpl = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates', 'video.json'), 'utf8'));
   tpl.slug = slug;
+  tpl.voice = randomVoice();
   fs.writeFileSync(file, JSON.stringify(tpl, null, 2) + '\n');
   console.log(file);
 }

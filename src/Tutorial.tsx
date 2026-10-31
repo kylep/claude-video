@@ -34,7 +34,18 @@ const SceneFrame: React.FC<{ scene: Scene; accent: string; showCaptions: boolean
   );
 };
 
-export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions }) => {
+// "voice: <name>" bottom-right for the opening scene, so every video credits its narrator.
+const VoiceLabel: React.FC<{ label: string; until: number; accent: string }> = ({ label, until, accent }) => {
+  const frame = useCurrentFrame();
+  const opacity = interpolate(frame, [10, 25, until - 15, until], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <div style={{ position: 'absolute', right: 48, bottom: 22, opacity, fontFamily: fonts.mono, fontSize: 24, color: colors.muted }}>
+      voice: <span style={{ color: accent }}>{label}</span>
+    </div>
+  );
+};
+
+export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions, voiceLabel }) => {
   const frame = useCurrentFrame();
   const total = scenes.reduce((a, s) => a + s.durationInFrames, 0) || 1;
   return (
@@ -49,6 +60,7 @@ export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCapt
       <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>
         {title}
       </div>
+      {voiceLabel && scenes.length > 0 && <VoiceLabel label={voiceLabel} until={scenes[0].durationInFrames} accent={accent} />}
       <div style={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: `${(frame / total) * 100}%`, background: accent }} />
     </AbsoluteFill>
   );

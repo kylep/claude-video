@@ -30,8 +30,8 @@ node bin/cv.mjs render my-video      # ~/gh/reports/video/my-video.mp4 (+ .srt)
 npm run studio                       # optional live preview (load build/props.json as props)
 ```
 
-The Claude Code skill is `skill/tutorial-video/SKILL.md`, symlinked to
-`~/.claude/skills/tutorial-video`. It holds the authoring rules (scene lengths, cue
+The Claude Code skill is `skill/tutorial-video/` (SKILL.md + voices.json, which holds voice feedback).
+Install or update it with `scripts/deploy-skill.sh` (copies to `~/.claude/skills/tutorial-video`). It holds the authoring rules (scene lengths, cue
 usage, text limits) that keep videos consistent.
 
 ## Notes

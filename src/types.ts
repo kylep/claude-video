@@ -32,5 +32,6 @@ export type VideoProps = {
   height: number;
   accent: string;
   showCaptions: boolean;
+  voiceLabel?: string;
   scenes: Scene[];
 };

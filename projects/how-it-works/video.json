@@ -3,8 +3,8 @@
   "title": "claude-video",
   "targetSeconds": 60,
   "tts": "kokoro",
-  "voice": "auto",
-  "speed": 1.0,
+  "voice": "am_michael",
+  "speed": 1.08,
   "accent": "#d97757",
   "captions": true,
   "pronounce": {
