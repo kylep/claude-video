@@ -24,7 +24,7 @@ const ENGINES = {
   say: {},
 };
 const MAX_WER = 0.2;
-// Voice pool + Kyle's voice feedback live with the skill so feedback steers random picks.
+// Voice pool + the user's voice feedback live with the skill so feedback steers random picks.
 const VOICES_FILE = path.join(ROOT, 'skill', 'tutorial-video', 'voices.json');
 const randomVoice = () => pickRandomVoice(JSON.parse(fs.readFileSync(VOICES_FILE, 'utf8')));
 

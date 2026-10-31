@@ -17,6 +17,11 @@ video.json ──► Kokoro TTS (per [[next]] segment) ──► Whisper check �
 - **Render:** Remotion 4 (React) renders 1080p30 H.264. It uses Remotion's bundled ffmpeg, so no Homebrew ffmpeg is needed.
 - **Review:** `cv stills` renders one frame per scene plus a contact sheet so Claude can see the layout before rendering.
 
+## Requirements
+
+macOS on Apple Silicon (MLX), Node 22+, `uv`, ImageMagick (`brew install imagemagick uv`).
+Videos are written to `~/gh/reports/video/` by default; set `CV_OUT_DIR` to change that.
+
 ## Use
 
 ```sh

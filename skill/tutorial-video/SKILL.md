@@ -6,7 +6,7 @@ description: Use when the user asks for a tutorial, explainer, walkthrough, demo
 # Tutorial video
 
 Narrated 1080p tutorial videos made from a JSON script. The toolkit lives in
-`~/gh/claude-video` (private repo kylep/claude-video). Every video gets the same
+`~/gh/claude-video` ([kylep/claude-video](https://github.com/kylep/claude-video)). Every video gets the same
 theme, scene layouts and timing rules, so you write **data, not animation code**.
 
 Pipeline: `video.json` → Kokoro (local neural TTS via mlx-audio) speaks each narration
