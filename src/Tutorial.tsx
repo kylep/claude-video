@@ -1,0 +1,55 @@
+import React from 'react';
+import { AbsoluteFill, Audio, Sequence, Series, interpolate, staticFile, useCurrentFrame } from 'remotion';
+import { sceneComponents } from './scenes';
+import { colors, fonts } from './theme';
+import type { Scene, VideoProps } from './types';
+
+const FADE = 8;
+
+const SceneFrame: React.FC<{ scene: Scene; accent: string; showCaptions: boolean }> = ({ scene, accent, showCaptions }) => {
+  const frame = useCurrentFrame();
+  const d = scene.durationInFrames;
+  const opacity = interpolate(frame, [0, FADE, d - FADE, d], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const Comp = sceneComponents[scene.type];
+  const cap = scene.captions.find((c) => frame >= c.start && frame < c.end);
+  return (
+    <AbsoluteFill>
+      <AbsoluteFill style={{ opacity }}>
+        <Comp scene={scene} accent={accent} />
+      </AbsoluteFill>
+      {scene.segments.map((s) => (
+        <Sequence key={s.index} from={s.from} durationInFrames={s.durationInFrames + 2} layout="none">
+          <Audio src={staticFile(s.audio)} />
+        </Sequence>
+      ))}
+      {showCaptions && cap && (
+        <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 64 }}>
+          <div style={{
+            maxWidth: 1500, padding: '14px 30px', borderRadius: 14, background: 'rgba(8,9,12,.82)',
+            fontFamily: fonts.sans, fontSize: 36, lineHeight: 1.3, color: colors.text, textAlign: 'center',
+          }}>{cap.text}</div>
+        </AbsoluteFill>
+      )}
+    </AbsoluteFill>
+  );
+};
+
+export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions }) => {
+  const frame = useCurrentFrame();
+  const total = scenes.reduce((a, s) => a + s.durationInFrames, 0) || 1;
+  return (
+    <AbsoluteFill style={{ background: `radial-gradient(1400px 900px at 15% 0%, ${colors.bg2}, ${colors.bg})` }}>
+      <Series>
+        {scenes.map((s) => (
+          <Series.Sequence key={s.id} durationInFrames={s.durationInFrames}>
+            <SceneFrame scene={s} accent={accent} showCaptions={showCaptions} />
+          </Series.Sequence>
+        ))}
+      </Series>
+      <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>
+        {title}
+      </div>
+      <div style={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: `${(frame / total) * 100}%`, background: accent }} />
+    </AbsoluteFill>
+  );
+};

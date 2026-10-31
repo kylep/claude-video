@@ -1,0 +1,93 @@
+{
+  "slug": "how-it-works",
+  "title": "claude-video",
+  "targetSeconds": 60,
+  "voice": "auto",
+  "rate": 178,
+  "accent": "#d97757",
+  "captions": true,
+  "pronounce": {
+    "Remotion": "Ree-motion",
+    "JSON": "Jason",
+    "MP4": "M P 4"
+  },
+  "scenes": [
+    {
+      "id": "intro",
+      "type": "title",
+      "title": "Videos from a prompt",
+      "subtitle": "How Claude makes tutorial videos with code and built-in macOS tools",
+      "narration": "This whole video was made by Claude, using nothing but code and the tools already on a Mac."
+    },
+    {
+      "id": "pipeline",
+      "type": "flow",
+      "heading": "The pipeline",
+      "steps": [
+        {
+          "label": "Script",
+          "detail": "video.json: scenes, visuals, narration"
+        },
+        {
+          "label": "Voice",
+          "detail": "macOS say speaks every line"
+        },
+        {
+          "label": "Timing",
+          "detail": "real audio length sets each cue"
+        },
+        {
+          "label": "Render",
+          "detail": "Remotion turns React into MP4"
+        }
+      ],
+      "narration": "Here's the pipeline. [[next]] Claude writes a script as JSON: scenes, visuals, and narration. [[next]] The built-in say command speaks each line. [[next]] Measured audio lengths set the timing of every animation. [[next]] And Remotion renders it all to an MP4."
+    },
+    {
+      "id": "spec",
+      "type": "code",
+      "heading": "A scene is just data",
+      "language": "video.json",
+      "highlight": [
+        3,
+        5
+      ],
+      "code": "{\n  \"id\": \"pipeline\",\n  \"type\": \"flow\",\n  \"heading\": \"The pipeline\",\n  \"narration\": \"Here's how. [[next]] Claude writes...\",\n  \"steps\": [\n    { \"label\": \"Script\" },\n    { \"label\": \"Voice\" }\n  ]\n}",
+      "narration": "Each scene is a small block like this. The type picks a layout, and next markers in the narration tell each visual exactly when to appear, so the picture stays in sync with the voice."
+    },
+    {
+      "id": "commands",
+      "type": "terminal",
+      "heading": "Look, then render",
+      "lines": [
+        {
+          "cmd": "cv stills how-it-works",
+          "out": "contact sheet: build/stills/contact.png"
+        },
+        {
+          "cmd": "cv render how-it-works",
+          "out": "wrote ~/gh/reports/video/how-it-works.mp4 (60.0s, audio+video)"
+        }
+      ],
+      "narration": "[[next]] Before rendering, Claude grabs a still of every scene and actually looks at them, fixing anything cramped or cluttered. [[next]] Then one command renders the final video, with subtitles."
+    },
+    {
+      "id": "why",
+      "type": "bullets",
+      "heading": "Why it stays consistent",
+      "bullets": [
+        "One theme shared by every video",
+        "Scenes are data, not hand-written animation",
+        "Timing comes from the real audio"
+      ],
+      "narration": "[[next]] Every video shares one theme. [[next]] Scenes are data, not hand-written animation. [[next]] And timing comes from the real audio, never from guesses."
+    },
+    {
+      "id": "outro",
+      "type": "outro",
+      "title": "Ask Claude for a tutorial video",
+      "subtitle": "~/gh/claude-video",
+      "narration": "That's it. Ask Claude for a tutorial video, and this is what you get."
+    }
+  ]
+}

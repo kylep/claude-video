@@ -1,0 +1,33 @@
+{
+  "slug": "",
+  "title": "Video title",
+  "targetSeconds": 60,
+  "voice": "auto",
+  "rate": 185,
+  "accent": "#d97757",
+  "captions": true,
+  "pronounce": {},
+  "scenes": [
+    {
+      "id": "intro",
+      "type": "title",
+      "title": "What you'll learn",
+      "subtitle": "One sentence promise of the video",
+      "narration": "One or two sentences that hook the viewer."
+    },
+    {
+      "id": "steps",
+      "type": "bullets",
+      "heading": "Three things",
+      "bullets": ["First point", "Second point", "Third point"],
+      "narration": "Lead-in sentence. [[next]] First point, spoken. [[next]] Second point. [[next]] Third point."
+    },
+    {
+      "id": "outro",
+      "type": "outro",
+      "title": "Wrap-up line",
+      "subtitle": "link-or-command",
+      "narration": "One sentence recap and call to action."
+    }
+  ]
+}
