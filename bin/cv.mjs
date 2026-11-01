@@ -244,6 +244,11 @@ function synthesize(jobs, tts, outDir) {
 }
 
 // Remotion ships ffmpeg/ffprobe in a platform package; call it directly (no Homebrew ffmpeg needed).
+function ffmpeg(args) {
+  const dir = path.join(ROOT, 'node_modules', '@remotion', `compositor-${process.platform}-${process.arch}`);
+  return run(path.join(dir, 'ffmpeg'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir } });
+}
+
 function ffprobe(args) {
   const dir = path.join(ROOT, 'node_modules', '@remotion', `compositor-${process.platform}-${process.arch}`);
   return run(path.join(dir, 'ffprobe'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir } });
@@ -330,7 +335,8 @@ function build(arg) {
       seconds: j.key ? wavSeconds(path.join(pubDir, `${j.key}.wav`)) : 0,
     })));
     if (s.seconds) minFrames = Math.max(minFrames, Math.round(s.seconds * FPS));
-    const layout = layoutScene(segTexts, audio, { fps: FPS, minFrames });
+    // Quiz answers get a beat to sink in before the next question.
+    const layout = layoutScene(segTexts, audio, { fps: FPS, minFrames, tail: s.type === 'quiz' ? 2 : 0.7 });
     // Credit the narrator on the first scene and wherever the voice changes.
     if (si === 0 || sceneTts[si].voice !== sceneTts[si - 1].voice) scene.voiceTag = label(sceneTts[si]);
     scene.voiceName = label(sceneTts[si]);
@@ -432,17 +438,66 @@ async function render(arg, outArg) {
   const { serveUrl, composition } = await bundleAndSelect(props);
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const out = path.resolve(outArg ?? path.join(OUT_DIR, `${spec.slug}.mp4`));
-  let last = -1;
-  await renderMedia({
-    serveUrl, composition, inputProps: props, codec: 'h264', crf: 20, outputLocation: out,
-    // CV_CONCURRENCY caps parallel tabs (WebGL-heavy scenes need fewer); CV_FRAMES=a-b renders a slice for testing.
-    concurrency: process.env.CV_CONCURRENCY ? Number(process.env.CV_CONCURRENCY) : undefined,
-    frameRange: process.env.CV_FRAMES ? process.env.CV_FRAMES.split('-').map(Number) : undefined,
-    onProgress: ({ progress }) => {
-      const pct = Math.floor(progress * 10) * 10;
-      if (pct !== last) { last = pct; process.stdout.write(`render ${pct}%\n`); }
-    },
-  });
+  const concurrency = process.env.CV_CONCURRENCY ? Number(process.env.CV_CONCURRENCY) : undefined;
+  // CV_GL=swangle renders WebGL in software (SwiftShader): slower, but no GPU-process crashes.
+  const chromiumOptions = process.env.CV_GL ? { gl: process.env.CV_GL } : undefined;
+  const progress = (label) => {
+    let last = -1;
+    return ({ progress: p }) => {
+      const pct = Math.floor(p * 10) * 10;
+      if (pct !== last) { last = pct; process.stdout.write(`${label} ${pct}%\n`); }
+    };
+  };
+  const total = composition.durationInFrames;
+  // Long WebGL-heavy renders leak memory in Chrome until the tab crashes ("Page crashed!").
+  // Render video and audio in chunks (each renderMedia call gets a fresh browser): video as muted
+  // H.264 joined without re-encoding, audio as PCM WAV (sample-exact joins), encoded to AAC once.
+  const CHUNK = Number(process.env.CV_CHUNK ?? 1500);
+  if (process.env.CV_FRAMES || total <= CHUNK) {
+    await renderMedia({
+      serveUrl, composition, inputProps: props, codec: 'h264', crf: 20, outputLocation: out, concurrency, chromiumOptions,
+      // CV_FRAMES=a-b renders a slice for testing.
+      frameRange: process.env.CV_FRAMES ? process.env.CV_FRAMES.split('-').map(Number) : undefined,
+      onProgress: progress('render'),
+    });
+  } else {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-chunks-'));
+    const parts = [];
+    const wavs = [];
+    // Chrome intermittently kills a tab ("Page crashed!") around WebGL mounts; a fresh browser on
+    // the same chunk almost always succeeds, so retry a chunk before giving up.
+    const attempt = async (label, opts) => {
+      for (let n = 1; ; n++) {
+        try { return await renderMedia(opts); } catch (e) {
+          if (n >= 3 || !/crash|Target closed|Session closed/i.test(String(e?.message ?? e))) throw e;
+          console.log(`${label}: ${String(e?.message ?? e).split('\n')[0]} - retrying (${n}/2)`);
+        }
+      }
+    };
+    for (let a = 0, i = 0; a < total; a += CHUNK, i++) {
+      const b = Math.min(total, a + CHUNK) - 1;
+      const part = path.join(tmp, `part${String(i).padStart(3, '0')}.mp4`);
+      await attempt(`video ${a}-${b}`, {
+        serveUrl, composition, inputProps: props, codec: 'h264', crf: 20, muted: true, frameRange: [a, b],
+        outputLocation: part, concurrency, chromiumOptions, onProgress: progress(`video ${a}-${b}/${total}`),
+      });
+      parts.push(part);
+      const wav = path.join(tmp, `part${String(i).padStart(3, '0')}.wav`);
+      await attempt(`audio ${a}-${b}`, {
+        serveUrl, composition, inputProps: props, codec: 'wav', frameRange: [a, b],
+        outputLocation: wav, concurrency, chromiumOptions, onProgress: progress(`audio ${a}-${b}/${total}`),
+      });
+      wavs.push(wav);
+    }
+    const list = (name, files) => {
+      const f = path.join(tmp, name);
+      fs.writeFileSync(f, files.map((x) => `file '${x}'`).join('\n'));
+      return f;
+    };
+    ffmpeg(['-f', 'concat', '-safe', '0', '-i', list('video.txt', parts), '-f', 'concat', '-safe', '0', '-i', list('audio.txt', wavs),
+      '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', out]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
   fs.writeFileSync(out.replace(/\.mp4$/, '.srt'), toSrt(props.scenes, FPS));
   const info = JSON.parse(ffprobe(['-show_entries', 'stream=codec_type:format=duration', '-of', 'json', out]));
   const kinds = info.streams.map((s) => s.codec_type).sort().join('+');

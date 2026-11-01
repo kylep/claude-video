@@ -29,7 +29,9 @@
     "bm_daniel",
     "bm_lewis"
   ],
-  "excluded": {},
+  "excluded": {
+    "bf_emma": "robotic, poorer quality than af_heart (Kyle, 2026-11-01)"
+  },
   "preferred": {
     "af_heart": "2026-10-31 user: 'much much much better' than macOS say (first Kokoro render)"
   },
@@ -55,11 +57,6 @@
       "note": "'playful sounds right' on paper, then 'ehhh' after hearing it; not chosen"
     },
     {
-      "date": "2026-10-31",
-      "voice": "kokoro/bf_emma",
-      "note": "Chosen for the kids' quiz host; Kyle wants her 'upbeat and cheery'"
-    },
-    {
       "date": "2026-11-01",
       "voice": "kokoro/ff_siwis (lang a)",
       "note": "'delightful' (French-accented English, lang-test-1)"
@@ -68,6 +65,11 @@
       "date": "2026-11-01",
       "voice": "kokoro/ef_dora (lang a)",
       "note": "'kind of choppy' (Spanish-accented English, lang-test-1)"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "kokoro/bf_emma",
+      "note": "Rejected after a full video: 'very robotic and poorer quality compared to' af_heart (quiz host, speed 1.08). Kokoro grades it B-; use af_bella (A-) or af_heart (A) for quality."
     }
   ]
 }

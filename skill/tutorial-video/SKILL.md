@@ -133,8 +133,10 @@ the last build" videos. Use one
 
 **Quiz narration** must have exactly 6 cues:
 `question [[next]] Is it A, X? [[next]] B, Y! [[next]] C, Z! [[next]] Or D, W? [[next]] [[pause 5]] [[next]] reveal`.
-Kokoro garbles a bare "A," at the start of a clip ("her", "eye"); leading with
-"Is it A, …?" fixes it. Some one-word clips grow a trailing "s" ("yellows"):
+Kokoro's G2P reads a bare "A" as the article "uh" (ɐ); set the scene's
+`"pronounce": {"A": "[A](/ˈeɪ/)"}` (misaki phoneme markup) so it says the letter, and
+lead with "Is it A, …?" so the clip doesn't start on the letter. Pick a high-grade voice for the
+quiz host: Kokoro grades are in hexgrad/Kokoro-82M VOICES.md (af_heart A, af_bella A-; most others C or lower sound robotic). Some one-word clips grow a trailing "s" ("yellows"):
 end with "!" or add a word. Questions are numbered automatically.
 
 **Per-scene overrides:** `voice` and `speed` (a different narrator for a
@@ -248,5 +250,5 @@ overwrites it. Never edit the deployed copy; edit the repo, commit, then deploy.
 - Voice comparison samples: `~/gh/reports/video/voice-samples/`.
 - Output dir override: `CV_OUT_DIR=/path node bin/cv.mjs render <slug>` or `--out file.mp4`.
 - `node bin/cv.mjs doctor` checks prerequisites.
-- WebGL-heavy videos (news scenes: three.js globe, @remotion/effects) can crash Chrome tabs ("Page crashed!") at the default concurrency: render with `CV_CONCURRENCY=2`. `CV_FRAMES=0-400` renders a slice for testing.
+- WebGL-heavy videos (news scenes: three.js globe, @remotion/effects) leak memory in Chrome until the tab crashes ("Page crashed!"). `cv render` therefore renders audio once and video in chunks of `CV_CHUNK` frames (default 1500), each in a fresh browser, then joins them losslessly. For news videos use `CV_CONCURRENCY=1 CV_CHUNK=1200`. `CV_FRAMES=0-400` renders one slice for testing.
 - Rive scenes: `cv build` checks the unpkg rive.wasm (hardcoded by @remotion/rive) is byte-identical to node_modules before rendering.

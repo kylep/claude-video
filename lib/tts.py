@@ -20,6 +20,8 @@ SAME = {
     "see": "c", "sea": "c", "be": "b", "bee": "b", "ay": "a", "dee": "d",
     "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
     "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+    # British vs American spelling (Whisper writes US spellings)
+    "colour": "color", "colours": "colors", "favourite": "favorite", "grey": "gray",
 }
 
 
