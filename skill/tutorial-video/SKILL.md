@@ -170,6 +170,37 @@ note the source), `scenes`, and the voice settings:
 
 `speed` (neural, default 1.0) and `verify` (default true: Whisper speech check) apply to neural engines.
 
+## News videos (`"chrome": "news"`)
+
+Broadcast-style recaps. Spec top-level adds `chrome: "news"` (ticker crawl + always-on narrator
+chip with a live level meter), `ticker[]`, `date`, and `captionStyle: "word"` (TikTok-style word
+highlight). See `projects/news-2026-11-01/` locally for a full example (not committed).
+
+| type | fields (src/news/types.ts) | packages it exercises |
+|---|---|---|
+| `open` | `title`, `subtitle`, `date`, `hue` | svg-3d-engine, lottie, noise |
+| `bumper` | `title`, `subtitle`, `hue` (silent, `seconds`) | svg-3d-engine, starburst, noise |
+| `globe` | `kicker`, `headline`, `points`, `pins[{lat,lon,label}]` | three (real Natural Earth land) |
+| `story` | `kicker`, `place`, `headline`, `points`, `marks[{text,kind,cue}]`, `emoji`, `stat`, `bg` | layout-utils, rounded-text-box, rough-notation, animated-emoji, animation-utils, effects |
+| `security` | `kicker`, `headline`, `points`, `cve`, `cvss` (only if published), `product`, `stat` | effects, shapes |
+| `market` | `kicker`, `headline`, `days`, `series[{name,values}]`, `stats` | paths, shapes, layout-utils |
+| `movers` | `kicker`, `headline`, `movers[{ticker,name,change,note}]` | gsap, shapes, motion-blur |
+| `scoreboard` | `kicker`, `team`, `headline`, `games[]`, `record`, `star`, `emoji` | gsap, shapes, motion-blur, animated-emoji |
+| `screen` | `kicker`, `headline`, `url`, `points` | mac-cursors, motion-blur |
+| `gif` | `kicker`, `headline`, `points`, `gif` (path) | gif |
+| `rundown` | `kicker`, `items` | gsap, animation-utils |
+| `signoff` | `title`, `subtitle`, `rive` (path) | rive |
+
+Any scene: `transition` into the next scene (`fade`, `slide`, `wipe`, `flip`, `clockWipe`, `iris`
+overlap the cut; `lightLeak`, `starburst` are overlays) and `sfx[{name, cue|at, volume}]` with
+@remotion/sfx export names (stick to neutral ones: whoosh, ding, pageTurn, mouseClick, uiSwitch).
+One `[[next]]` cue per point/pin/item/mover; scoreboard uses games + 2 (record, star).
+
+**Accuracy is non-negotiable.** Every number, chart, map, gauge, GIF and badge must come from a
+dated source. Never draw an "illustrative" series; with two data points use a stat card. No
+CVSS gauge without a published score. No "LIVE" badges on recaps. Chart baselines must match the
+stated period. Credits list only sources actually used. Run a fact-check pass before rendering.
+
 ## Voices
 
 - **Random unless specified.** If the user names a voice, set `"voice"`. Otherwise leave it out:
@@ -217,3 +248,5 @@ overwrites it. Never edit the deployed copy; edit the repo, commit, then deploy.
 - Voice comparison samples: `~/gh/reports/video/voice-samples/`.
 - Output dir override: `CV_OUT_DIR=/path node bin/cv.mjs render <slug>` or `--out file.mp4`.
 - `node bin/cv.mjs doctor` checks prerequisites.
+- WebGL-heavy videos (news scenes: three.js globe, @remotion/effects) can crash Chrome tabs ("Page crashed!") at the default concurrency: render with `CV_CONCURRENCY=2`. `CV_FRAMES=0-400` renders a slice for testing.
+- Rive scenes: `cv build` checks the unpkg rive.wasm (hardcoded by @remotion/rive) is byte-identical to node_modules before rendering.

@@ -5,14 +5,55 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { boardBase, layoutScene, pickRandomVoice, pickVoice, sayable, speechRanges, splitPauses, splitSegments, toSrt } from '../lib/timing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
+const require = createRequire(import.meta.url);
+const SFX = await import('@remotion/sfx');
+const EMOJI = require(path.join(ROOT, 'node_modules/@remotion/animated-emoji/dist/cjs/emoji-data.js')).emojis;
+
+// Remote assets are downloaded once at build time so renders never depend on the network for them.
+function download(url, dest) {
+  if (fs.existsSync(dest)) return;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  run('curl', ['-fsSL', '--max-time', '60', '-o', `${dest}.part`, url]);
+  fs.renameSync(`${dest}.part`, dest);
+}
+// <AnimatedEmoji> loads staticFile(`${name}-1x.webm`) from the public root. Noto Animated Emoji, CC BY 4.0.
+function ensureEmoji(name) {
+  if (!EMOJI.some((e) => e.name === name)) die(`unknown emoji "${name}" (see getAvailableEmojis() in @remotion/animated-emoji)`);
+  // Pinned commit so a clean build always fetches the same files.
+  download(`https://raw.githubusercontent.com/remotion-dev/animated-emoji/84bfdfbd5fb97729cb1973d9003017fe669f8c92/public/${name}-1x.webm`, path.join(PUBLIC, `${name}-1x.webm`));
+}
+// sfx names are @remotion/sfx export names (whoosh, ding, uiSwitch, ...); returns the public-relative path.
+// @remotion/rive hardcodes its runtime URL (unpkg). Before any render that uses Rive, check the
+// served wasm is byte-identical to the lockfile-verified copy in node_modules.
+let riveChecked = false;
+function verifyRiveWasm() {
+  if (riveChecked) return;
+  const local = path.join(ROOT, 'node_modules', '@rive-app', 'canvas-advanced', 'rive.wasm');
+  const ver = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', '@rive-app', 'canvas-advanced', 'package.json'), 'utf8')).version;
+  const tmp = path.join(os.tmpdir(), `cv-rive-${process.pid}.wasm`);
+  run('curl', ['-fsSL', '--max-time', '60', '-o', tmp, `https://unpkg.com/@rive-app/canvas-advanced@${ver}/rive.wasm`]);
+  const sha = (f) => createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+  const ok = sha(tmp) === sha(local);
+  fs.rmSync(tmp);
+  if (!ok) die(`rive.wasm from unpkg does not match node_modules/@rive-app/canvas-advanced@${ver}; refusing to render`);
+  riveChecked = true;
+}
+function ensureSfx(name) {
+  const url = SFX[name];
+  if (typeof url !== 'string' || !url.startsWith('https://remotion.media/')) die(`unknown sfx "${name}" (one of ${Object.keys(SFX).join(', ')})`);
+  download(url, path.join(PUBLIC, 'sfx', path.basename(url)));
+  return `sfx/${path.basename(url)}`;
+}
 const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports', 'video');
 const FPS = 30;
-const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'quiz', 'outro'];
+const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'quiz', 'outro',
+  'open', 'bumper', 'globe', 'security', 'market', 'movers', 'scoreboard', 'story', 'screen', 'gif', 'rundown', 'signoff'];
 const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts' };
 const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'rgbled', 'pot', 'diode', 'transistor', 'buzzer', 'glow', 'strip', 'flow', 'remove'];
 const ANCHORS = {
@@ -26,6 +67,7 @@ const ANCHORS = {
 };
 // Quiz scenes: narration = question [[next]] A [[next]] B [[next]] C [[next]] D [[next]] [[pause N]] [[next]] reveal.
 const QUIZ_CUES = 6;
+const TRANSITIONS = ['fade', 'slide', 'wipe', 'flip', 'clockWipe', 'iris', 'lightLeak', 'starburst'];
 const BOARD_REF = /^(?:[a-j](?:[1-9]|[1-5]\d|6[0-3])|(?:far|near)[+-]:(?:[1-9]|[1-5]\d|6[0-3]))$/;
 const VENV_PY = path.join(ROOT, '.venv', 'bin', 'python');
 // Neural engines run locally through mlx-audio (Apple Silicon). Kokoro is the default:
@@ -84,6 +126,7 @@ function validate(spec) {
       if (cues !== QUIZ_CUES) errs.push(`${at}: quiz narration needs ${QUIZ_CUES} [[next]] cues (question, A, B, C, D, countdown, reveal); got ${cues}`);
     }
     if (s.voice !== undefined && typeof s.voice !== 'string') errs.push(`${at}: voice must be a string`);
+    if (s.transition && !TRANSITIONS.includes(s.transition.type)) errs.push(`${at}: transition.type must be one of ${TRANSITIONS.join(', ')}`);
     if (s.lang !== undefined && !/^[a-z]$/.test(s.lang)) errs.push(`${at}: lang must be one Kokoro language letter (a, b, e, f, h, i, j, p, z)`);
     if (s.music !== undefined && (typeof s.music !== 'object' || !s.music.src)) errs.push(`${at}: music must be {src, volume?, duck?}`);
     if (s.type === 'diagram') {
@@ -260,6 +303,19 @@ function build(arg) {
       scene.src = `${pubRel}/assets/${name}`;
       if (s.type === 'clip') minFrames = Math.round(mediaSeconds(src) * FPS) + 20;
     }
+    for (const key of ['gif', 'rive']) {
+      if (!s[key]) continue;
+      const src = path.resolve(dir, s[key]);
+      if (!fs.existsSync(src)) die(`${s.id}: ${key} not found: ${src}`);
+      // Prefix with the scene id so two scenes' same-named files can't overwrite each other.
+      const name = `${s.id}-${path.basename(src)}`;
+      fs.copyFileSync(src, path.join(pubDir, 'assets', name));
+      scene[key] = `${pubRel}/assets/${name}`;
+    }
+    if (s.rive) verifyRiveWasm();
+    const emoji = s.emoji ?? (s.type === 'scoreboard' ? 'ice-hockey' : undefined); // scoreboard's default
+    if (emoji) ensureEmoji(emoji);
+    if (s.sfx) scene.sfx = s.sfx.map((x) => ({ ...x, src: ensureSfx(x.name) }));
     if (s.type === 'breadboard') scene.base = boardBase(spec.scenes, si);
     if (s.type === 'quiz') {
       const tick = path.join(pubDir, 'assets', 'tick.wav');
@@ -277,6 +333,7 @@ function build(arg) {
     const layout = layoutScene(segTexts, audio, { fps: FPS, minFrames });
     // Credit the narrator on the first scene and wherever the voice changes.
     if (si === 0 || sceneTts[si].voice !== sceneTts[si - 1].voice) scene.voiceTag = label(sceneTts[si]);
+    scene.voiceName = label(sceneTts[si]);
     scene.durationInFrames = layout.durationInFrames;
     scene.cues = layout.cues;
     scene.captions = layout.captions;
@@ -311,6 +368,10 @@ function build(arg) {
     height: 1080,
     accent: spec.accent ?? '#d97757',
     showCaptions: spec.captions ?? true,
+    captionStyle: spec.captionStyle ?? 'box',
+    chrome: spec.chrome,
+    ticker: spec.ticker,
+    date: spec.date,
     music,
     scenes,
   };
@@ -374,6 +435,9 @@ async function render(arg, outArg) {
   let last = -1;
   await renderMedia({
     serveUrl, composition, inputProps: props, codec: 'h264', crf: 20, outputLocation: out,
+    // CV_CONCURRENCY caps parallel tabs (WebGL-heavy scenes need fewer); CV_FRAMES=a-b renders a slice for testing.
+    concurrency: process.env.CV_CONCURRENCY ? Number(process.env.CV_CONCURRENCY) : undefined,
+    frameRange: process.env.CV_FRAMES ? process.env.CV_FRAMES.split('-').map(Number) : undefined,
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 10) * 10;
       if (pct !== last) { last = pct; process.stdout.write(`render ${pct}%\n`); }

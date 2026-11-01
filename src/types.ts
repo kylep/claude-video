@@ -1,7 +1,12 @@
+import type { NewsFields } from './news/types';
+// Into the next scene. lightLeak/starburst are overlays across the cut; the rest overlap the two scenes.
+export type Transition = { type: 'fade' | 'slide' | 'wipe' | 'flip' | 'clockWipe' | 'iris' | 'lightLeak' | 'starburst'; frames?: number; direction?: 'from-left' | 'from-right' | 'from-top' | 'from-bottom' };
 export type Caption = { text: string; start: number; end: number };
 export type Segment = { index: number; from: number; durationInFrames: number; audio: string };
 
-export type SceneType = 'title' | 'bullets' | 'code' | 'terminal' | 'flow' | 'image' | 'clip' | 'breadboard' | 'diagram' | 'quiz' | 'outro';
+export type SceneType = 'title' | 'bullets' | 'code' | 'terminal' | 'flow' | 'image' | 'clip' | 'breadboard' | 'diagram' | 'quiz' | 'outro'
+  | 'open' | 'bumper' | 'globe' | 'security' | 'market' | 'movers' | 'scoreboard'
+  | 'story' | 'screen' | 'gif' | 'rundown' | 'signoff';
 
 // diagram scenes: one big part with labels revealed one per [[next]] cue.
 export type Callout = { text: string; anchor: string; lit?: boolean };
@@ -24,7 +29,7 @@ export type BoardItem = {
 };
 export type BoardGroup = { label?: string; items: BoardItem[]; zoom?: boolean };
 
-export type Scene = {
+export type Scene = NewsFields & {
   id: string;
   type: SceneType;
   narration: string;
@@ -57,7 +62,10 @@ export type Scene = {
   speed?: number;
   seconds?: number;     // minimum scene length (e.g. a silent section title)
   voiceTag?: string;    // filled in by cv build: narrator credit when the voice changes
+  voiceName?: string;   // filled in by cv build: this scene's narrator
   callouts?: Callout[];
+  transition?: Transition; // into the NEXT scene
+  sfx?: { name: string; cue?: number; volume?: number; at?: number; src?: string }[]; // src filled by cv build
   // Filled in by `cv voice`:
   durationInFrames: number;
   segments: Segment[];
@@ -72,6 +80,10 @@ export type VideoProps = {
   height: number;
   accent: string;
   showCaptions: boolean;
+  captionStyle?: 'box' | 'word'; // word: TikTok-style per-word highlight
+  chrome?: 'news';               // news: ticker crawl + always-on narrator chip with level meter
+  ticker?: string[];
+  date?: string;
   music?: Music[];
   scenes: Scene[];
 };

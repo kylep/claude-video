@@ -23,7 +23,55 @@ SAME = {
 }
 
 
+ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split()
+TENS = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def int_words(n):
+    if n < 20:
+        return ONES[n]
+    if n < 100:
+        return TENS[n // 10] + ("" if n % 10 == 0 else " " + ONES[n % 10])
+    for size, name in ((10**9, "billion"), (10**6, "million"), (1000, "thousand"), (100, "hundred")):
+        if n >= size:
+            rest = n % size
+            return int_words(n // size) + " " + name + ("" if rest == 0 else " " + int_words(rest))
+    return str(n)
+
+
+def spell_numbers(s):
+    # Whisper writes "53", "$6.3", "19%"; scripts say "fifty three". Spell digits out on both
+    # sides so the comparison is about words, not number formatting.
+    def one(m):
+        whole, frac, pct = m.group(1).replace(",", ""), m.group(2), m.group(3)
+        n = int(whole) if len(whole) < 13 else None
+        if n is None:
+            out = whole
+        elif "," not in m.group(1) and not frac and 1100 <= n <= 2099 and not 2000 <= n <= 2009:
+            hi, lo = divmod(n, 100)  # years: 1946 -> nineteen forty six
+            out = int_words(hi) + (" hundred" if lo == 0 else " oh " + ONES[lo] if lo < 10 else " " + int_words(lo))
+        else:
+            out = int_words(n)
+        if frac:
+            out += " point " + " ".join(ONES[int(d)] for d in frac)
+        return " " + out + (" percent" if pct else "") + " "
+    s = re.sub(r"\$(\d[\d,]*(?:\.\d+)?)\s*(billion|million|thousand)?", lambda m: m.group(1) + (" " + m.group(2) if m.group(2) else "") + " dollars ", s)
+    def ordinal(m):
+        w = int_words(int(m.group(1).replace(",", ""))).split()
+        last = {"one": "first", "two": "second", "three": "third", "five": "fifth", "eight": "eighth",
+                "nine": "ninth", "twelve": "twelfth"}.get(w[-1]) or (w[-1][:-1] + "ieth" if w[-1].endswith("y") else w[-1] + "th")
+        return " " + " ".join(w[:-1] + [last]) + " "
+    s = re.sub(r"\b(\d+(?:,\d{3})*)(?:st|nd|rd|th)\b", ordinal, s)
+    s = re.sub(r"(\d+(?:,\d{3})*)(?:\.(\d+))?(%)?", one, s)
+    # "a hundred and twenty" == "one hundred twenty"
+    s = re.sub(r"\ba (hundred|thousand|million|billion)\b", r"one \1", s, flags=re.I)
+    # Only the "and" inside a number ("a hundred and twenty"), never ordinary words: dropping every
+    # "and" would let a skipped "and" in the narration pass unnoticed.
+    return re.sub(r"\b(hundred|thousand|million|billion) and\b", r"\1", s, flags=re.I)
+
+
 def words(s, hyphen=""):
+    s = spell_numbers(s)
     # hyphen="" joins ("hand-written" == "handwritten"); hyphen=" " splits
     # ("220-ohm" == "220 ohm"). Other punctuation always separates.
     toks = re.sub(r"[^a-z0-9' ]+", " ", s.lower().replace("-", hyphen)).split()
