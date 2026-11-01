@@ -32,11 +32,10 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
    Never render without looking at the stills at least once.
 6. **Render:** `node bin/cv.mjs render <slug>`. It fails loudly if the output has
    no audio stream. Spot-check a frame from the MP4 if you changed layouts.
-7. **Don't publish before review.** This repo is public. Before adding assets,
-   add the project folder to `.git/info/exclude` (personal photos, third-party
-   images and music must never be committed). Render to `~/gh/reports/video/`,
-   report the MP4 path, and commit the spec only after the user has reviewed
-   the video and said it can go public.
+7. **Never commit videos or their specs.** Only the tooling (`bin/`, `lib/`, `src/`,
+   `skill/`, tests) goes in git. Before writing the spec, add the project folder
+   to `.git/info/exclude`. Render to `~/gh/reports/video/` (not a repo) and report
+   the MP4 path.
 
 ## Script rules
 

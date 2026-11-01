@@ -58,6 +58,16 @@
       "date": "2026-10-31",
       "voice": "kokoro/bf_emma",
       "note": "Chosen for the kids' quiz host; Kyle wants her 'upbeat and cheery'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "kokoro/ff_siwis (lang a)",
+      "note": "'delightful' (French-accented English, lang-test-1)"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "kokoro/ef_dora (lang a)",
+      "note": "'kind of choppy' (Spanish-accented English, lang-test-1)"
     }
   ]
 }
