@@ -53,6 +53,7 @@ export type Scene = {
   quizNumber?: number;
   quizTotal?: number;
   voice?: string;       // narrator override for this scene
+  lang?: string;        // Kokoro phonemizer language override (e.g. "a" for English with a foreign voice)
   speed?: number;
   seconds?: number;     // minimum scene length (e.g. a silent section title)
   voiceTag?: string;    // filled in by cv build: narrator credit when the voice changes

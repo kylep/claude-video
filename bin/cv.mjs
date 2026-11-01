@@ -84,6 +84,7 @@ function validate(spec) {
       if (cues !== QUIZ_CUES) errs.push(`${at}: quiz narration needs ${QUIZ_CUES} [[next]] cues (question, A, B, C, D, countdown, reveal); got ${cues}`);
     }
     if (s.voice !== undefined && typeof s.voice !== 'string') errs.push(`${at}: voice must be a string`);
+    if (s.lang !== undefined && !/^[a-z]$/.test(s.lang)) errs.push(`${at}: lang must be one Kokoro language letter (a, b, e, f, h, i, j, p, z)`);
     if (s.music !== undefined && (typeof s.music !== 'object' || !s.music.src)) errs.push(`${at}: music must be {src, volume?, duck?}`);
     if (s.type === 'diagram') {
       if (!ANCHORS[s.component]) errs.push(`${at}: component must be one of ${Object.keys(ANCHORS).join(', ')}`);
@@ -143,12 +144,15 @@ function resolveTts(spec) {
     voice: spec.voice && spec.voice !== 'auto' ? spec.voice : voice,
     speed: spec.speed ?? 1.0,
     instruct: spec.instruct ?? null,
+    // Kokoro phonemizer language; null = the voice id's first letter. "a" + a foreign voice = accented English.
+    lang: spec.lang ?? null,
     verify: spec.verify ?? true,
   };
 }
 
+// lang joins the key only when set, so clips cached before it existed keep their keys.
 const ttsKey = (tts, text) =>
-  createHash('sha1').update(JSON.stringify([tts.engine, tts.voice, tts.rate, tts.speed, tts.instruct, text])).digest('hex').slice(0, 16);
+  createHash('sha1').update(JSON.stringify([tts.engine, tts.voice, tts.rate, tts.speed, tts.instruct, text, ...(tts.lang ? [tts.lang] : [])])).digest('hex').slice(0, 16);
 
 const wavSeconds = (wav) => {
   const m = run('afinfo', [wav]).match(/estimated duration:\s*([\d.]+)/);
@@ -176,7 +180,7 @@ function synthesize(jobs, tts, outDir) {
   // Write to a temp name first so a failed or rejected clip is never cached.
   const jobFile = path.join(outDir, 'tts-jobs.json');
   fs.writeFileSync(jobFile, JSON.stringify({
-    model: tts.model, voice: tts.voice, speed: tts.speed, instruct: tts.instruct, verify: tts.verify,
+    model: tts.model, voice: tts.voice, lang_code: tts.lang, speed: tts.speed, instruct: tts.instruct, verify: tts.verify,
     jobs: todo.map((j) => ({ text: j.text, ref: j.ref, out: path.join(outDir, `${j.key}.tmp.wav`) })),
   }));
   const out = run(VENV_PY, ['-I', path.join(ROOT, 'lib', 'tts.py'), jobFile], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
@@ -231,14 +235,14 @@ function build(arg) {
 
   // Pass 1: every narration segment -> a cached clip key, then synthesize the missing ones in one batch.
   // segs[scene][segment] = spoken parts, split on [[pause N]].
-  // A scene can override the narrator (`voice`, `speed`); clips are cached per voice and speed.
-  const sceneTts = spec.scenes.map((s) => ({ ...tts, voice: s.voice ?? tts.voice, speed: s.speed ?? tts.speed }));
+  // A scene can override the narrator (`voice`, `speed`, `lang`); clips are cached per voice, speed and lang.
+  const sceneTts = spec.scenes.map((s) => ({ ...tts, voice: s.voice ?? tts.voice, speed: s.speed ?? tts.speed, lang: s.lang ?? tts.lang }));
   const segs = spec.scenes.map((s, si) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
     ? { key: ttsKey(sceneTts[si], sayable(p.text, { ...spec.pronounce, ...s.pronounce })), text: sayable(p.text, { ...spec.pronounce, ...s.pronounce }), ref: p.text, pauseAfter: p.pauseAfter, tts: sceneTts[si] }
     : { key: null, ref: '', pauseAfter: p.pauseAfter }))));
   const groups = new Map();
   for (const j of segs.flat(2).filter((x) => x.key)) {
-    const g = `${j.tts.voice}|${j.tts.speed}`;
+    const g = `${j.tts.voice}|${j.tts.speed}|${j.tts.lang}`;
     if (!groups.has(g)) groups.set(g, { tts: j.tts, jobs: [] });
     groups.get(g).jobs.push(j);
   }

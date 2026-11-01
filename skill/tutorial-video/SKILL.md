@@ -139,7 +139,10 @@ Kokoro garbles a bare "A," at the start of a clip ("her", "eye"); leading with
 end with "!" or add a word. Questions are numbered automatically.
 
 **Per-scene overrides:** `voice` and `speed` (a different narrator for a
-section; the voice credit shows wherever the voice changes), `pronounce`
+section; the voice credit shows wherever the voice changes), `lang` (Kokoro
+phonemizer language, also settable top-level; default is the voice id's first
+letter. `"lang": "a"` with a non-English voice like `ff_siwis` or `ef_dora` gives
+accented English. Without it a foreign voice mangles English text), `pronounce`
 (merged over the spec's), `music` (`{src, volume, duck}` switches the bed from
 that scene on, crossfaded), `seconds` (minimum length, e.g. a silent section
 title: `"type": "title", "narration": ""`).
