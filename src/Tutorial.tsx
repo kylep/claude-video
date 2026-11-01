@@ -37,20 +37,29 @@ const SceneFrame: React.FC<{ scene: Scene; accent: string; showCaptions: boolean
 // Background music: looped, faded in and out, ducked smoothly whenever narration plays.
 const DUCK_RAMP = 9; // frames to ease into/out of a duck
 const MusicBed: React.FC<{ music: Music; total: number; fps: number }> = ({ music, total, fps }) => {
+  // f is relative to this bed's start; speech ranges are absolute.
   const level = (f: number) => {
     let gap = Infinity; // frames to the nearest narration (0 while speaking)
+    const abs = f + music.from;
     for (const [a, b] of music.speech) {
-      if (f >= a && f < b) { gap = 0; break; }
-      gap = Math.min(gap, f < a ? a - f : f - b + 1);
+      if (abs >= a && abs < b) { gap = 0; break; }
+      gap = Math.min(gap, abs < a ? a - abs : abs - b + 1);
     }
+    const len = music.to - music.from;
+    const atStart = music.from === 0; const atEnd = music.to >= total;
+    const fadeIn = atStart ? fps * 1.5 : fps * 0.8; const fadeOut = atEnd ? fps * 2.5 : fps * 0.8;
     const duck = interpolate(gap, [0, DUCK_RAMP], [music.duck, 1], { extrapolateRight: 'clamp' });
-    const fade = interpolate(f, [0, fps * 1.5, total - fps * 2.5, total], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    const fade = interpolate(f, [0, fadeIn, len - fadeOut, len], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
     return music.volume * duck * fade;
   };
-  return <Audio src={staticFile(music.src)} loop volume={level} />;
+  return (
+    <Sequence from={music.from} durationInFrames={Math.max(1, music.to - music.from)} layout="none">
+      <Audio src={staticFile(music.src)} loop volume={level} />
+    </Sequence>
+  );
 };
 
-// "voice: <name>" bottom-right for the opening scene, so every video credits its narrator.
+// "voice: <name>" bottom-right on the opening scene and wherever the narrator changes.
 const VoiceLabel: React.FC<{ label: string; until: number; accent: string }> = ({ label, until, accent }) => {
   const frame = useCurrentFrame();
   const opacity = interpolate(frame, [10, 25, until - 15, until], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
@@ -61,7 +70,7 @@ const VoiceLabel: React.FC<{ label: string; until: number; accent: string }> = (
   );
 };
 
-export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions, voiceLabel, music, fps }) => {
+export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCaptions, music, fps }) => {
   const frame = useCurrentFrame();
   const total = scenes.reduce((a, s) => a + s.durationInFrames, 0) || 1;
   return (
@@ -70,14 +79,14 @@ export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCapt
         {scenes.map((s) => (
           <Series.Sequence key={s.id} durationInFrames={s.durationInFrames}>
             <SceneFrame scene={s} accent={accent} showCaptions={showCaptions} />
+            {s.voiceTag && <VoiceLabel label={s.voiceTag} until={s.durationInFrames} accent={accent} />}
           </Series.Sequence>
         ))}
       </Series>
       <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>
         {title}
       </div>
-      {music && <MusicBed music={music} total={total} fps={fps} />}
-      {voiceLabel && scenes.length > 0 && <VoiceLabel label={voiceLabel} until={scenes[0].durationInFrames} accent={accent} />}
+      {(music ?? []).map((m, i) => <MusicBed key={i} music={m} total={total} fps={fps} />)}
       <div style={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: `${(frame / total) * 100}%`, background: accent }} />
     </AbsoluteFill>
   );

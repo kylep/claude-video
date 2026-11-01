@@ -16,10 +16,24 @@ from mlx_audio.tts.utils import load_model
 STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16"
 
 
+SAME = {
+    "see": "c", "sea": "c", "be": "b", "bee": "b", "ay": "a", "dee": "d",
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+}
+
+
 def words(s, hyphen=""):
     # hyphen="" joins ("hand-written" == "handwritten"); hyphen=" " splits
     # ("220-ohm" == "220 ohm"). Other punctuation always separates.
     toks = re.sub(r"[^a-z0-9' ]+", " ", s.lower().replace("-", hyphen)).split()
+    # Quiz-style "C, three" is often heard as "C3"; letters sound like words
+    # ("see", "be"); numbers come back as digits. Same mapping on both sides.
+    split = []
+    for t in toks:
+        m = re.fullmatch(r"([a-z])(\d+)", t)
+        split.extend([m.group(1), m.group(2)] if m else [t])
+    toks = [SAME.get(t, t) for t in split]
     # Runs of spelled-out letters ("L.E.D.", "L E D") collapse to one word ("led").
     out, run = [], ""
     for t in toks + [""]:

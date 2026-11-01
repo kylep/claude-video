@@ -6,6 +6,7 @@ import { colors, fonts } from './theme';
 import type { Scene } from './types';
 import { BreadboardScene } from './breadboard';
 import { DiagramScene } from './diagram';
+import { QuizScene } from './quiz';
 
 type P = { scene: Scene; accent: string };
 
@@ -235,5 +236,5 @@ export const OutroScene: React.FC<P> = ({ scene, accent }) => (
 
 export const sceneComponents: Record<Scene['type'], React.FC<P>> = {
   title: TitleScene, bullets: BulletsScene, code: CodeScene, terminal: TerminalScene,
-  flow: FlowScene, image: ImageScene, clip: ClipScene, breadboard: BreadboardScene, diagram: DiagramScene, outro: OutroScene,
+  flow: FlowScene, image: ImageScene, clip: ClipScene, breadboard: BreadboardScene, diagram: DiagramScene, quiz: QuizScene, outro: OutroScene,
 };

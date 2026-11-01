@@ -1,7 +1,7 @@
 export type Caption = { text: string; start: number; end: number };
 export type Segment = { index: number; from: number; durationInFrames: number; audio: string };
 
-export type SceneType = 'title' | 'bullets' | 'code' | 'terminal' | 'flow' | 'image' | 'clip' | 'breadboard' | 'diagram' | 'outro';
+export type SceneType = 'title' | 'bullets' | 'code' | 'terminal' | 'flow' | 'image' | 'clip' | 'breadboard' | 'diagram' | 'quiz' | 'outro';
 
 // diagram scenes: one big part with labels revealed one per [[next]] cue.
 export type Callout = { text: string; anchor: string; lit?: boolean };
@@ -44,7 +44,18 @@ export type Scene = {
   zoom?: boolean;
   fresh?: boolean;      // breadboard: start from an empty board
   tags?: boolean;       // breadboard: label the active group's holes (default true)
-  component?: 'led' | 'resistor' | 'transistor';
+  component?: 'led' | 'resistor' | 'transistor' | 'rgbled' | 'mix' | 'pwm' | 'buzzer' | 'diode' | 'pot';
+  // quiz: one multiple-choice question with a countdown and a reveal.
+  question?: string;
+  options?: string[];
+  answer?: number;      // index into options
+  tick?: string;        // filled in by cv build
+  quizNumber?: number;
+  quizTotal?: number;
+  voice?: string;       // narrator override for this scene
+  speed?: number;
+  seconds?: number;     // minimum scene length (e.g. a silent section title)
+  voiceTag?: string;    // filled in by cv build: narrator credit when the voice changes
   callouts?: Callout[];
   // Filled in by `cv voice`:
   durationInFrames: number;
@@ -60,14 +71,15 @@ export type VideoProps = {
   height: number;
   accent: string;
   showCaptions: boolean;
-  voiceLabel?: string;
-  music?: Music;
+  music?: Music[];
   scenes: Scene[];
 };
 
 // Background music bed: looped, faded in/out, ducked under narration.
 export type Music = {
   src: string;
+  from: number;                // absolute frames this bed plays over
+  to: number;
   volume: number;              // level when nobody is speaking
   duck: number;                // multiplier while narration plays
   speech: [number, number][];  // absolute frame ranges with narration

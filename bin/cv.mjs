@@ -12,10 +12,20 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports', 'video');
 const FPS = 30;
-const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'outro'];
+const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'quiz', 'outro'];
 const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts' };
 const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'rgbled', 'pot', 'diode', 'transistor', 'buzzer', 'glow', 'strip', 'flow', 'remove'];
-const ANCHORS = { led: ['dome', 'anode', 'cathode', 'flat'], resistor: ['bands', 'left', 'right', 'body'], transistor: ['flat', 'e', 'b', 'c'] };
+const ANCHORS = {
+  led: ['dome', 'anode', 'cathode', 'flat'], resistor: ['bands', 'left', 'right', 'body'], transistor: ['flat', 'e', 'b', 'c'],
+  rgbled: ['red', 'green', 'blue', 'common', 'dome'],
+  mix: ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white'],
+  pwm: ['bright', 'dim', 'on', 'off'],
+  buzzer: ['coil', 'disc', 'waves', 'low', 'high'],
+  diode: ['band', 'plain', 'door', 'kick'],
+  pot: ['track', 'wiper', 'top', 'ground', 'middle', 'meter'],
+};
+// Quiz scenes: narration = question [[next]] A [[next]] B [[next]] C [[next]] D [[next]] [[pause N]] [[next]] reveal.
+const QUIZ_CUES = 6;
 const BOARD_REF = /^(?:[a-j](?:[1-9]|[1-5]\d|6[0-3])|(?:far|near)[+-]:(?:[1-9]|[1-5]\d|6[0-3]))$/;
 const VENV_PY = path.join(ROOT, '.venv', 'bin', 'python');
 // Neural engines run locally through mlx-audio (Apple Silicon). Kokoro is the default:
@@ -66,6 +76,15 @@ function validate(spec) {
       if (cues && cues !== n) errs.push(`${at}: ${cues} [[next]] cues but ${n} ${key} (use one cue per item, or none)`);
     }
     if ((s.type === 'image' || s.type === 'clip') && !s.src) errs.push(`${at}: src is required`);
+    if (s.type === 'quiz') {
+      if (!s.question) errs.push(`${at}: question is required`);
+      if ((s.options ?? []).length !== 4) errs.push(`${at}: options must have 4 entries`);
+      if (!(Number.isInteger(s.answer) && s.answer >= 0 && s.answer < 4)) errs.push(`${at}: answer must be 0-3 (index into options)`);
+      const cues = (s.narration?.match(/\[\[next\]\]/g) ?? []).length;
+      if (cues !== QUIZ_CUES) errs.push(`${at}: quiz narration needs ${QUIZ_CUES} [[next]] cues (question, A, B, C, D, countdown, reveal); got ${cues}`);
+    }
+    if (s.voice !== undefined && typeof s.voice !== 'string') errs.push(`${at}: voice must be a string`);
+    if (s.music !== undefined && (typeof s.music !== 'object' || !s.music.src)) errs.push(`${at}: music must be {src, volume?, duck?}`);
     if (s.type === 'diagram') {
       if (!ANCHORS[s.component]) errs.push(`${at}: component must be one of ${Object.keys(ANCHORS).join(', ')}`);
       (s.callouts ?? []).forEach((c, ci) => {
@@ -139,7 +158,8 @@ const wavSeconds = (wav) => {
 
 // Synthesize every uncached clip. jobs: [{key, text (spoken form), ref (caption form)}].
 function synthesize(jobs, tts, outDir) {
-  const todo = jobs.filter((j) => !fs.existsSync(path.join(outDir, `${j.key}.wav`)));
+  // The same line can appear twice (e.g. a repeated quiz option); synthesize it once.
+  const todo = [...new Map(jobs.filter((j) => !fs.existsSync(path.join(outDir, `${j.key}.wav`))).map((j) => [j.key, j])).values()];
   if (!todo.length) return;
   console.log(`tts: ${tts.engine}${tts.voice ? ` / ${tts.voice}` : ''}: generating ${todo.length} clip(s)...`);
   if (tts.engine === 'say') {
@@ -182,6 +202,21 @@ function ffprobe(args) {
   return run(path.join(dir, 'ffprobe'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir } });
 }
 
+// A short soft "tick" for quiz countdowns: 40 ms decaying 1.2 kHz blip, 48 kHz mono WAV.
+function writeTick(file) {
+  const rate = 48000; const n = Math.round(rate * 0.04);
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+  buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    buf.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 1200 * t) * Math.exp(-t * 90) * 0.5 * 32767), 44 + i * 2);
+  }
+  fs.writeFileSync(file, buf);
+}
+
 const mediaSeconds = (file) => Number(ffprobe(['-show_entries', 'format=duration', '-of', 'csv=p=0', file]).trim()) || 0;
 
 // Build props.json: narration audio per [[next]] segment, cue frames, captions.
@@ -196,10 +231,19 @@ function build(arg) {
 
   // Pass 1: every narration segment -> a cached clip key, then synthesize the missing ones in one batch.
   // segs[scene][segment] = spoken parts, split on [[pause N]].
-  const segs = spec.scenes.map((s) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
-    ? { key: ttsKey(tts, sayable(p.text, spec.pronounce)), text: sayable(p.text, spec.pronounce), ref: p.text, pauseAfter: p.pauseAfter }
+  // A scene can override the narrator (`voice`, `speed`); clips are cached per voice and speed.
+  const sceneTts = spec.scenes.map((s) => ({ ...tts, voice: s.voice ?? tts.voice, speed: s.speed ?? tts.speed }));
+  const segs = spec.scenes.map((s, si) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
+    ? { key: ttsKey(sceneTts[si], sayable(p.text, { ...spec.pronounce, ...s.pronounce })), text: sayable(p.text, { ...spec.pronounce, ...s.pronounce }), ref: p.text, pauseAfter: p.pauseAfter, tts: sceneTts[si] }
     : { key: null, ref: '', pauseAfter: p.pauseAfter }))));
-  synthesize(segs.flat(2).filter((j) => j.key), tts, pubDir);
+  const groups = new Map();
+  for (const j of segs.flat(2).filter((x) => x.key)) {
+    const g = `${j.tts.voice}|${j.tts.speed}`;
+    if (!groups.has(g)) groups.set(g, { tts: j.tts, jobs: [] });
+    groups.get(g).jobs.push(j);
+  }
+  for (const { tts: t, jobs } of groups.values()) synthesize(jobs, t, pubDir);
+  const label = (t) => (t.engine === 'kokoro' ? t.voice : `${t.engine}/${t.voice ?? 'default'}`);
 
   const scenes = spec.scenes.map((s, si) => {
     const scene = { ...s };
@@ -213,12 +257,22 @@ function build(arg) {
       if (s.type === 'clip') minFrames = Math.round(mediaSeconds(src) * FPS) + 20;
     }
     if (s.type === 'breadboard') scene.base = boardBase(spec.scenes, si);
+    if (s.type === 'quiz') {
+      const tick = path.join(pubDir, 'assets', 'tick.wav');
+      if (!fs.existsSync(tick)) writeTick(tick);
+      scene.tick = `${pubRel}/assets/tick.wav`;
+      scene.quizNumber = spec.scenes.slice(0, si + 1).filter((x) => x.type === 'quiz').length;
+      scene.quizTotal = spec.scenes.filter((x) => x.type === 'quiz').length;
+    }
     const segTexts = splitSegments(s.narration);
     const audio = segs[si].map((parts) => parts.map((j) => ({
       key: j.key, text: j.ref, pauseAfter: j.pauseAfter,
       seconds: j.key ? wavSeconds(path.join(pubDir, `${j.key}.wav`)) : 0,
     })));
+    if (s.seconds) minFrames = Math.max(minFrames, Math.round(s.seconds * FPS));
     const layout = layoutScene(segTexts, audio, { fps: FPS, minFrames });
+    // Credit the narrator on the first scene and wherever the voice changes.
+    if (si === 0 || sceneTts[si].voice !== sceneTts[si - 1].voice) scene.voiceTag = label(sceneTts[si]);
     scene.durationInFrames = layout.durationInFrames;
     scene.cues = layout.cues;
     scene.captions = layout.captions;
@@ -226,19 +280,25 @@ function build(arg) {
     return scene;
   });
 
-  let music;
-  if (spec.music) {
-    const src = path.resolve(dir, spec.music.src);
-    if (!fs.existsSync(src)) die(`music src not found: ${src}`);
-    const name = path.basename(src);
-    fs.copyFileSync(src, path.join(pubDir, 'assets', name));
-    music = {
-      src: `${pubRel}/assets/${name}`,
-      volume: spec.music.volume ?? 0.16,
-      duck: spec.music.duck ?? 0.4,
-      speech: speechRanges(scenes),
-    };
-  }
+  // Music beds: spec.music plays from the start; a scene's own `music` switches
+  // to a new bed from that scene on (crossfaded).
+  const beds = [];
+  const speech = speechRanges(scenes);
+  let offset = 0;
+  scenes.forEach((s, si) => {
+    const m = si === 0 ? (spec.scenes[0].music ?? spec.music) : spec.scenes[si].music;
+    if (m) {
+      const src = path.resolve(dir, m.src);
+      if (!fs.existsSync(src)) die(`music src not found: ${src}`);
+      const name = path.basename(src);
+      fs.copyFileSync(src, path.join(pubDir, 'assets', name));
+      if (beds.length) beds[beds.length - 1].to = offset;
+      beds.push({ src: `${pubRel}/assets/${name}`, volume: m.volume ?? spec.music?.volume ?? 0.16, duck: m.duck ?? spec.music?.duck ?? 0.4, from: offset, to: 0, speech });
+    }
+    offset += s.durationInFrames;
+  });
+  if (beds.length) beds[beds.length - 1].to = offset;
+  const music = beds.length ? beds : undefined;
 
   const props = {
     title: spec.title,
@@ -247,7 +307,6 @@ function build(arg) {
     height: 1080,
     accent: spec.accent ?? '#d97757',
     showCaptions: spec.captions ?? true,
-    voiceLabel: tts.engine === 'kokoro' ? tts.voice : `${tts.engine}/${tts.voice ?? 'default'}`,
     music,
     scenes,
   };
@@ -271,7 +330,8 @@ async function bundleAndSelect(props) {
 }
 
 // One still per scene at ~70% through (after most cues fired), plus a contact sheet.
-async function stills(arg) {
+// --only id1,id2 renders just those scenes; --at 0.95 picks the point in each scene (default 0.7).
+async function stills(arg, opts = {}) {
   const { props, buildDir } = build(arg);
   const { renderStill } = await import('@remotion/renderer');
   const { serveUrl, composition } = await bundleAndSelect(props);
@@ -280,8 +340,10 @@ async function stills(arg) {
   fs.mkdirSync(outDir, { recursive: true });
   let offset = 0;
   const files = [];
+  const only = opts.only ? new Set(opts.only.split(',')) : null;
   for (const [i, s] of props.scenes.entries()) {
-    const frame = offset + Math.floor(s.durationInFrames * 0.7);
+    if (only && !only.has(s.id)) { offset += s.durationInFrames; continue; }
+    const frame = offset + Math.floor(s.durationInFrames * Math.min(0.999, Number(opts.at ?? 0.7)));
     const output = path.join(outDir, `${String(i + 1).padStart(2, '0')}-${s.id}.png`);
     await renderStill({ serveUrl, composition, inputProps: props, frame, output });
     files.push(output);
@@ -368,7 +430,11 @@ const outArg = outIdx >= 0 ? rest[outIdx + 1] : undefined;
 switch (cmd) {
   case 'init': init(rest[0]); break;
   case 'build': build(rest[0]); break;
-  case 'stills': await stills(rest[0]); break;
+  case 'stills': {
+    const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+    await stills(rest[0], { only: flag('--only'), at: flag('--at') });
+    break;
+  }
   case 'render': await render(rest[0], outArg); break;
   case 'doctor': doctor(); break;
   case 'setup': setup(); break;
@@ -378,7 +444,7 @@ switch (cmd) {
   init <slug>             scaffold projects/<slug>/video.json
   setup                   create .venv with mlx-audio (Kokoro TTS + Whisper speech check)
   build <spec|slug>       narrate (local TTS), verify speech, compute timing -> build/props.json
-  stills <spec|slug>      build + one PNG per scene + contact.png for review
+  stills <spec|slug> [--only id,id] [--at 0.95]  build + PNGs + contact.png for review
   render <spec|slug> [--out file.mp4]   build + render MP4 (+ .srt) to $CV_OUT_DIR
   doctor                  check prerequisites and chosen voice
   voices                  list English say voices`);

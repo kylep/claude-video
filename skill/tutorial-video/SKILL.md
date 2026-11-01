@@ -26,7 +26,7 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
    until it reports `ok`. Trim words rather than pushing `speed` past 1.1.
    If the speech check fails, the clip skipped or garbled words: re-run (it resamples)
    or rephrase. Don't disable `verify` to get past it.
-5. **Look at it:** `node bin/cv.mjs stills <slug>`, then Read
+5. **Look at it:** `node bin/cv.mjs stills <slug>` (add `--only id,id --at 0.97` to check the end of particular scenes, e.g. a quiz reveal), then Read
    `projects/<slug>/build/stills/contact.png` (and individual PNGs if anything
    looks off). Fix overflow, crowding, orphans and empty-looking scenes, then re-run.
    Never render without looking at the stills at least once.
@@ -88,7 +88,8 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 | `image` | `heading`, `src`, `caption` | screenshots (slow zoom) |
 | `clip` | `heading`, `src` | screen recordings (muted under narration; scene lasts ≥ the clip) |
 | `breadboard` | `heading`, `groups[{label, items[]}]`, `zoom`, `tags`, `fresh` | electronics builds: parts snap into holes one group per cue, camera eases to each group, holes get tags |
-| `diagram` | `heading`, `component` (`led`/`resistor`/`transistor`), `callouts[{text, anchor, lit?}]` | one big part with labels popping in per cue (`\n` splits a label line) |
+| `diagram` | `heading`, `component`, `callouts[{text, anchor, lit?}]` | one big part with labels popping in per cue (`\n` splits a label line) |
+| `quiz` | `question`, `options[4]`, `answer` (0–3) | multiple choice: options appear per cue, silent 5-4-3-2-1 countdown with ticks, right answer turns green |
 | `outro` | `title`, `subtitle` | wrap-up + where to find it |
 
 **Breadboard items** (`groups[].items[]`): holes are `a1`…`j63`, rails are
@@ -122,6 +123,26 @@ the last build" videos. Use one
 - Check the wiring as a netlist (union the 5-hole strips through every wire,
   then check each part's legs and the forbidden pins) before rendering, and
   keep any written guide generated from the same holes as the video.
+
+**Diagram components and anchors:** `led` (dome, anode, cathode, flat),
+`resistor` (bands, left, right, body), `transistor` (flat, e, b, c), and animated:
+`rgbled` (red, green, blue, common, dome; each die lights when its callout shows),
+`mix` (red, green, blue, yellow, magenta, cyan, white; circles appear with their callout),
+`pwm` (on, off, bright, dim), `buzzer` (coil, disc, waves, low, high; vibrates faster once `high` shows),
+`diode` (plain, band, door, kick; the kick loop animates once `kick` shows),
+`pot` (track, wiper, ground, top, middle, meter; the wiper sweeps and a meter shows volts).
+
+**Quiz narration** must have exactly 6 cues:
+`question [[next]] Is it A, X? [[next]] B, Y! [[next]] C, Z! [[next]] Or D, W? [[next]] [[pause 5]] [[next]] reveal`.
+Kokoro garbles a bare "A," at the start of a clip ("her", "eye"); leading with
+"Is it A, …?" fixes it. Some one-word clips grow a trailing "s" ("yellows"):
+end with "!" or add a word. Questions are numbered automatically.
+
+**Per-scene overrides:** `voice` and `speed` (a different narrator for a
+section; the voice credit shows wherever the voice changes), `pronounce`
+(merged over the spec's), `music` (`{src, volume, duck}` switches the bed from
+that scene on, crossfaded), `seconds` (minimum length, e.g. a silent section
+title: `"type": "title", "narration": ""`).
 
 Every scene needs `id` (unique) and `narration`. `src` paths are relative to the
 spec file. Keep assets beside it in `projects/<slug>/`.
