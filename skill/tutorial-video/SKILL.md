@@ -215,6 +215,11 @@ stated period. Credits list only sources actually used. Run a fact-check pass be
   | `heart` (default) | Kokoro `af_heart` | female narrator; quiz hosts. ~3x faster than real time |
   | `ryan` | Qwen3 `Ryan` + a "calm, confident university professor" `instruct` | male narrator; how-it-works explainers. ~real time |
 
+  **Names:** the woman is **Kokoro Heart** and the man is **Qwen Ryan** (the user's naming,
+  2026-11-01). Two-host videos (news anchors, a host plus an explainer) can call each other
+  by these names in narration ("Thanks, Ryan."). They are named presenters, not characters:
+  no invented backstories or opinions presented as fact.
+
   `cv init`/`cv build` write `"narrator": "heart"` into a spec that names no voice. Set
   `"narrator"` per scene to switch speakers mid-video. Use a raw `tts`/`voice` only when the user
   asks for a different voice.
