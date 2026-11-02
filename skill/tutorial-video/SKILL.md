@@ -18,8 +18,11 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 1. **Understand the subject first.** Read the code/docs you're explaining. A video
    with a wrong claim is worse than no video.
 2. **Scaffold:** `cd ~/gh/claude-video && node bin/cv.mjs init <slug>` and
-   edit `projects/<slug>/video.json`. If `node_modules` is missing, run `npm ci`;
-   if `.venv` is missing, run `node bin/cv.mjs setup` (one-time model download).
+   edit `projects/<slug>/video.json`. If the repo is missing, clone
+   `https://github.com/kylep/claude-video` there. Run `node bin/cv.mjs setup` first on a new
+   machine (safe to re-run; it skips what's done). Not on Apple Silicon macOS (Linux, Intel,
+   k3s)? Build the image per the README "Docker" section and use `docker/cv.sh <command>`
+   wherever this skill says `node bin/cv.mjs <command>`.
 3. **Write the script** (rules below). Default length is 60s ≈ 140–150 spoken words with Kokoro.
 4. **Build + check timing:** `node bin/cv.mjs build <slug>`. It prints each
    scene's length and the total against `targetSeconds`. Edit the narration

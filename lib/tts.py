@@ -1,19 +1,52 @@
-"""Batch neural TTS via mlx-audio. Loads the model once for every segment.
+"""Batch neural TTS. Loads the model once for every segment.
+
+Two backends with the same models and voices:
+  mlx    Apple Silicon (mlx-audio, uses the GPU). Default on macOS arm64.
+  torch  anywhere else: Linux, Intel, Docker (PyTorch on the CPU; requirements-torch.txt).
+Set CV_TTS_BACKEND=mlx|torch to override.
 
 Usage: python lib/tts.py jobs.json
-jobs.json: {"model": repo_id, "voice": str|null, "speed": float, "instruct": str|null,
-            "verify": bool, "jobs": [{"text": str, "out": "/abs/path.wav"}]}
+jobs.json: {"engine": "kokoro"|"qwen3"|"chatterbox", "model": mlx repo_id, "voice": str|null,
+            "speed": float, "instruct": str|null, "lang_code": str|null, "verify": bool,
+            "jobs": [{"text": str, "ref": str, "out": "/abs/path.wav"}]}
 Prints one JSON line per job: {"out", "seconds", "wer"?, "heard"?}.
 """
+import gc
 import json
+import os
+import platform
 import re
 import sys
 
 import numpy as np
-from mlx_audio.audio_io import write as audio_write
-from mlx_audio.tts.utils import load_model
 
-STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16"
+MLX_STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16"
+TORCH_MODELS = {"qwen3": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"}
+
+
+def memory_gb():
+    """Usable RAM: the container's cgroup limit when there is one, else the machine's."""
+    total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    try:
+        limit = open("/sys/fs/cgroup/memory.max").read().strip()
+        if limit != "max":
+            total = min(total, int(limit))
+    except OSError:
+        pass
+    return total / 2**30
+
+
+def torch_stt_model():
+    # faster-whisper names. large-v3-turbo needs ~4 GB to load; small.en ~1.1 GB and is plenty
+    # for catching skipped or garbled words. CV_STT_MODEL overrides.
+    return os.environ.get("CV_STT_MODEL") or ("large-v3-turbo" if memory_gb() >= 8 else "small.en")
+
+
+def backend():
+    want = os.environ.get("CV_TTS_BACKEND")
+    if want:
+        return want
+    return "mlx" if sys.platform == "darwin" and platform.machine() == "arm64" else "torch"
 
 
 SAME = {
@@ -114,35 +147,122 @@ def _wer(r, h):
     return d[len(h)] / max(1, len(r))
 
 
-def main():
-    spec = json.load(open(sys.argv[1]))
-    model = load_model(model_path=spec["model"])
-    stt = None
-    if spec.get("verify"):
-        from mlx_audio.stt.utils import load_model as load_stt
+class MlxVoice:
+    def __init__(self, spec):
+        from mlx_audio.tts.utils import load_model
 
-        stt = load_stt(STT_MODEL)
-    for job in spec["jobs"]:
-        kwargs = {"text": job["text"], "speed": spec.get("speed", 1.0), "verbose": False}
+        self.spec = spec
+        self.model = load_model(model_path=spec["model"])
+
+    def say(self, text):
+        spec = self.spec
+        kwargs = {"text": text, "speed": spec.get("speed", 1.0), "verbose": False}
         if spec.get("lang_code"):
             kwargs["lang_code"] = spec["lang_code"]
-        elif "kokoro" in spec["model"].lower() and spec.get("voice"):
+        elif spec.get("engine") == "kokoro" and spec.get("voice"):
             # Kokoro voice ids start with their language: a=American, b=British, ...
             kwargs["lang_code"] = spec["voice"][0]
         if spec.get("voice"):
             kwargs["voice"] = spec["voice"]
         if spec.get("instruct"):
             kwargs["instruct"] = spec["instruct"]
-        chunks, sr = [], model.sample_rate
-        for result in model.generate(**kwargs):
+        chunks, sr = [], self.model.sample_rate
+        for result in self.model.generate(**kwargs):
             chunks.append(np.array(result.audio))
             sr = result.sample_rate
-        audio = np.concatenate(chunks)
-        audio_write(job["out"], audio, sr, format="wav")
-        line = {"out": job["out"], "seconds": round(len(audio) / sr, 3)}
-        if stt is not None:
-            heard = stt.generate(job["out"]).text.strip()
+        return np.concatenate(chunks), sr
+
+
+class TorchVoice:
+    def __init__(self, spec):
+        import torch
+
+        self.spec = spec
+        self.engine = spec.get("engine")
+        torch.set_num_threads(os.cpu_count() or 4)
+        if self.engine == "kokoro":
+            from kokoro import KPipeline
+
+            self.pipe = KPipeline(lang_code=spec.get("lang_code") or spec["voice"][0], repo_id="hexgrad/Kokoro-82M")
+        elif self.engine == "qwen3":
+            from qwen_tts import Qwen3TTSModel
+
+            self.model = Qwen3TTSModel.from_pretrained(TORCH_MODELS["qwen3"], device_map="cpu", dtype=torch.float32)
+        else:
+            sys.exit(f"tts engine {self.engine!r} has no torch backend (use kokoro or qwen3)")
+
+    def say(self, text):
+        spec = self.spec
+        if self.engine == "kokoro":
+            parts = [np.asarray(audio) for _, _, audio in self.pipe(text, voice=spec["voice"], speed=spec.get("speed", 1.0))]
+            return np.concatenate(parts), 24000
+        kwargs = {"text": text, "language": "English", "speaker": spec.get("voice") or "Ryan"}
+        if spec.get("instruct"):
+            kwargs["instruct"] = spec["instruct"]
+        wavs, sr = self.model.generate_custom_voice(**kwargs)
+        return np.asarray(wavs[0], dtype=np.float32), sr
+
+
+class MlxEars:
+    def __init__(self):
+        from mlx_audio.stt.utils import load_model
+
+        self.model = load_model(MLX_STT_MODEL)
+
+    def hear(self, wav):
+        return self.model.generate(wav).text.strip()
+
+
+class TorchEars:
+    def __init__(self):
+        from faster_whisper import WhisperModel
+
+        self.model = WhisperModel(torch_stt_model(), device="cpu", compute_type="int8")
+
+    def hear(self, wav):
+        # Hand Whisper 16 kHz mono samples directly; its own file decoding goes through PyAV,
+        # whose API changes have broken it before.
+        import soundfile
+
+        audio, sr = soundfile.read(wav, dtype="float32", always_2d=True)
+        audio = audio.mean(axis=1)
+        if sr != 16000:
+            n = int(len(audio) * 16000 / sr)
+            audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio).astype(np.float32)
+        segments, _ = self.model.transcribe(audio, language="en", beam_size=1)
+        return " ".join(seg.text.strip() for seg in segments).strip()
+
+
+def write_wav(path, audio, sr, mlx):
+    if mlx:
+        from mlx_audio.audio_io import write
+
+        write(path, audio, sr, format="wav")
+    else:
+        import soundfile
+
+        soundfile.write(path, np.asarray(audio, dtype=np.float32), sr, subtype="PCM_16", format="WAV")
+
+
+def main():
+    spec = json.load(open(sys.argv[1]))
+    mlx = backend() == "mlx"
+    voice = MlxVoice(spec) if mlx else TorchVoice(spec)
+    lines = []
+    for job in spec["jobs"]:
+        audio, sr = voice.say(job["text"])
+        write_wav(job["out"], audio, sr, mlx)
+        lines.append({"out": job["out"], "seconds": round(len(audio) / sr, 3)})
+    if spec.get("verify"):
+        # Unload the voice before loading Whisper: peak memory is the larger model, not both
+        # (matters on CPU boxes and small Docker VMs).
+        del voice
+        gc.collect()
+        ears = MlxEars() if mlx else TorchEars()
+        for job, line in zip(spec["jobs"], lines):
+            heard = ears.hear(job["out"])
             line.update(heard=heard, wer=round(wer(job.get("ref", job["text"]), heard), 3))
+    for line in lines:
         print(json.dumps(line), flush=True)
 
 

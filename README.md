@@ -25,6 +25,8 @@ video.json ──► Kokoro or Qwen3 TTS (per [[next]] segment) ──► Whispe
 
 ## Requirements
 
+Native install (fastest): the list below. Linux, Intel or k3s: see [Docker](#docker-linux-intel-or-a-mac-without-the-native-install).
+
 - macOS on Apple Silicon (MLX runs the voice models locally)
 - Node 22+
 - `uv` and ImageMagick: `brew install uv imagemagick`
@@ -52,6 +54,53 @@ an install). Each step checks its state and skips work that's done:
 
 To use it from Claude Code, install the skill with `scripts/deploy-skill.sh` (copies
 `skill/tutorial-video/` to `~/.claude/skills/tutorial-video`; re-run it after pulling).
+
+## Docker (Linux, Intel, or a Mac without the native install)
+
+`docker/Dockerfile` builds the same pipeline for Linux on amd64 or arm64. The voice models are
+the same (same narrators, same quality), but they run on the CPU through PyTorch instead of the
+GPU through MLX, since containers can't reach the Mac GPU. On an Apple Silicon Mac the native
+setup above is much faster; use Docker there only if you can't install the tools.
+
+Measured speeds (seconds of speech per second of compute; above 1 is faster than real time):
+
+| Narrator | Native Apple Silicon (MLX, M2) | CPU (PyTorch) | RAM on CPU |
+|---|---|---|---|
+| `heart` (Kokoro) | ~11x | ~0.6x on 2 cores (Docker VM); scales with cores | ~1.5 GB |
+| `ryan` (Qwen3-TTS 1.7B) | ~1.3x | ~0.06x on 8 M2 cores (a 1-minute script takes ~17 minutes) | ~6 GB |
+
+So on CPU-only machines use `heart`; keep `ryan` for short pieces or a Mac. The Whisper speech
+check uses `large-v3-turbo` when the machine (or container limit) has 8 GB or more, otherwise
+`small.en` (set `CV_STT_MODEL` to override). Give Docker at least 8 GB of memory for `ryan`.
+
+Build the image on the machine that will run it (it matches that machine's CPU):
+
+```sh
+git clone https://github.com/kylep/claude-video && cd claude-video
+docker build -f docker/Dockerfile -t claude-video .
+docker/cv.sh doctor
+```
+
+Then use `docker/cv.sh` exactly like `node bin/cv.mjs`:
+
+```sh
+docker/cv.sh init my-video           # edit projects/my-video/video.json on the host
+docker/cv.sh build my-video
+docker/cv.sh stills my-video
+docker/cv.sh render my-video         # -> ~/gh/reports/video/my-video.mp4 (CV_OUT_DIR to change)
+```
+
+`docker/cv.sh` mounts `projects/` (your specs) and `public/` (cached voice clips) from the
+checkout, the output folder, and a `claude-video-models` volume that holds the ~10 GB of models
+after the first build. Rebuilding the image after `git pull` reuses its cached layers.
+
+**k3s:** k3s uses its own containerd, so load the image into it after building, then run a Job
+(edit the slug and the `/srv/claude-video` host paths in the file first):
+
+```sh
+docker save claude-video:latest | sudo k3s ctr images import -
+kubectl apply -f docker/k3s-job.yaml && kubectl logs -f job/claude-video-render
+```
 
 ## Use
 

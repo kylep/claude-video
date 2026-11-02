@@ -1,0 +1,36 @@
+# One-off build + render of a video on a k3s node. Edit the slug and paths, then:
+#   kubectl apply -f docker/k3s-job.yaml && kubectl logs -f job/claude-video-render
+# The image must already be on the node (see README "Docker" -> k3s); hostPath keeps specs,
+# the voice-clip cache, the model cache and the output MP4 on the node's disk between runs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: claude-video-render
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: cv
+          image: claude-video:latest
+          imagePullPolicy: Never
+          command: ["sh", "-c"]
+          args: ["node bin/cv.mjs build $SLUG && node bin/cv.mjs render $SLUG"]
+          env:
+            - name: SLUG
+              value: my-video
+          resources:
+            requests: { cpu: "2", memory: 6Gi }
+            limits: { memory: 12Gi }
+          volumeMounts:
+            - { name: projects, mountPath: /app/projects }
+            - { name: public, mountPath: /app/public }
+            - { name: out, mountPath: /out }
+            - { name: cache, mountPath: /cache }
+      volumes:
+        - { name: projects, hostPath: { path: /srv/claude-video/projects, type: DirectoryOrCreate } }
+        - { name: public, hostPath: { path: /srv/claude-video/public, type: DirectoryOrCreate } }
+        - { name: out, hostPath: { path: /srv/claude-video/out, type: DirectoryOrCreate } }
+        - { name: cache, hostPath: { path: /srv/claude-video/cache, type: DirectoryOrCreate } }

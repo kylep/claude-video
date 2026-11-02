@@ -1,0 +1,9 @@
+# Neural TTS on the CPU (Linux, Intel, Docker). Same models and voices as requirements.txt (MLX).
+# Installed by: node bin/cv.mjs setup  (adds --torch-backend cpu so no CUDA wheels are pulled)
+kokoro==0.9.4
+misaki[en]==0.9.4
+qwen-tts==0.1.1
+faster-whisper==1.2.1
+soundfile==0.14.0
+# misaki's English model; otherwise Kokoro downloads it on every container start.
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

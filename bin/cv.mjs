@@ -90,6 +90,11 @@ function narratorTts(name) {
 
 const die = (msg) => { console.error(`cv: ${msg}`); process.exit(1); };
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts });
+const has = (cmd) => { try { run('which', [cmd]); return true; } catch { return false; } };
+// Apple Silicon runs the voices on the GPU through MLX; everything else (Linux, Intel, Docker)
+// runs the same models on the CPU through PyTorch. lib/tts.py makes the same choice.
+const MLX = process.platform === 'darwin' && process.arch === 'arm64';
+const REQUIREMENTS = path.join(ROOT, MLX ? 'requirements.txt' : 'requirements-torch.txt');
 
 function resolveSpec(arg) {
   if (!arg) die('missing spec (path to video.json or a project slug)');
@@ -190,6 +195,7 @@ function resolveTts(spec) {
   }
   const engine = spec.tts ?? 'kokoro';
   if (engine === 'say') {
+    if (process.platform !== 'darwin') die('tts "say" is macOS only; use a narrator');
     const voice = spec.voice && spec.voice !== 'auto' ? spec.voice : (sayVoiceCache ??= pickVoice(run('say', ['-v', '?'])));
     return { engine, voice, rate: spec.rate ?? 185 };
   }
@@ -210,10 +216,19 @@ function resolveTts(spec) {
 const ttsKey = (tts, text) =>
   createHash('sha1').update(JSON.stringify([tts.engine, tts.voice, tts.rate, tts.speed, tts.instruct, text, ...(tts.lang ? [tts.lang] : [])])).digest('hex').slice(0, 16);
 
+// Length of a PCM/float WAV from its header (portable: no afinfo on Linux).
 const wavSeconds = (wav) => {
-  const m = run('afinfo', [wav]).match(/estimated duration:\s*([\d.]+)/);
-  if (!m) die(`could not read duration of ${wav}`);
-  return Number(m[1]);
+  const b = fs.readFileSync(wav);
+  if (b.toString('ascii', 0, 4) !== 'RIFF' || b.toString('ascii', 8, 12) !== 'WAVE') die(`not a WAV file: ${wav}`);
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= b.length;) {
+    const id = b.toString('ascii', at, at + 4);
+    const size = b.readUInt32LE(at + 4);
+    if (id === 'fmt ') byteRate = b.readUInt32LE(at + 16);
+    if (id === 'data' && byteRate) return Math.min(size, b.length - at - 8) / byteRate;
+    at += 8 + size + (size & 1);
+  }
+  die(`could not read duration of ${wav}`);
 };
 
 // Synthesize every uncached clip. jobs: [{key, text (spoken form), ref (caption form)}].
@@ -236,7 +251,7 @@ function synthesize(jobs, tts, outDir, quiet = false) {
   // Write to a temp name first so a failed or rejected clip is never cached.
   const jobFile = path.join(outDir, 'tts-jobs.json');
   fs.writeFileSync(jobFile, JSON.stringify({
-    model: tts.model, voice: tts.voice, lang_code: tts.lang, speed: tts.speed, instruct: tts.instruct, verify: tts.verify,
+    engine: tts.engine, model: tts.model, voice: tts.voice, lang_code: tts.lang, speed: tts.speed, instruct: tts.instruct, verify: tts.verify,
     jobs: todo.map((j) => ({ text: j.text, ref: j.ref, out: path.join(outDir, `${j.key}.tmp.wav`) })),
   }));
   const out = run(VENV_PY, ['-I', path.join(ROOT, 'lib', 'tts.py'), jobFile], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
@@ -262,9 +277,13 @@ function ffmpeg(args) {
   return run(path.join(dir, 'ffmpeg'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir } });
 }
 
+// Remotion's bundled ffprobe: compositor-darwin-arm64, compositor-linux-x64-gnu, ...
 function ffprobe(args) {
-  const dir = path.join(ROOT, 'node_modules', '@remotion', `compositor-${process.platform}-${process.arch}`);
-  return run(path.join(dir, 'ffprobe'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir } });
+  const base = path.join(ROOT, 'node_modules', '@remotion');
+  const name = fs.readdirSync(base).find((d) => d.startsWith(`compositor-${process.platform}-${process.arch}`));
+  if (!name) die(`no Remotion compositor for ${process.platform}-${process.arch} in node_modules/@remotion`);
+  const dir = path.join(base, name);
+  return run(path.join(dir, 'ffprobe'), ['-v', 'error', ...args], { env: { ...process.env, DYLD_LIBRARY_PATH: dir, LD_LIBRARY_PATH: dir } });
 }
 
 // A short soft "tick" for quiz countdowns: 40 ms decaying 1.2 kHz blip, 48 kHz mono WAV.
@@ -444,7 +463,7 @@ async function stills(arg, opts = {}) {
     while (row.length < 3) row.push('xc:#111111');
     rows.push('(', ...row.flatMap((f) => ['(', f, '-resize', '640x360!', ')']), '-bordercolor', '#111111', '-border', '6', '+append', ')');
   }
-  run('magick', [...rows, '-append', sheet]);
+  run(has('magick') ? 'magick' : 'convert', [...rows, '-append', sheet]);  // ImageMagick 7 or 6 (Debian)
   console.log(`stills: ${outDir}\ncontact sheet: ${sheet}`);
 }
 
@@ -477,31 +496,51 @@ async function render(arg, outArg) {
       onProgress: progress('render'),
     });
   } else {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-chunks-'));
+    // Chunks live in a folder keyed by the props and chunk size, so an interrupted render resumes:
+    // finished chunks (renamed into place only once complete) are skipped.
+    const key = createHash('sha256').update(JSON.stringify(props)).update(String(CHUNK)).digest('hex').slice(0, 12);
+    const tmp = path.join(ROOT, 'projects', spec.slug, 'build', `chunks-${key}`);
+    fs.mkdirSync(tmp, { recursive: true });
     const parts = [];
     const wavs = [];
     // Chrome intermittently kills a tab ("Page crashed!") around WebGL mounts; a fresh browser on
-    // the same chunk almost always succeeds, so retry a chunk before giving up.
-    const attempt = async (label, opts) => {
+    // the same chunk almost always succeeds, so retry a chunk before giving up. Remotion's own
+    // browser restart can also hang forever with no progress, so a chunk that makes no progress
+    // for CV_STALL seconds (default 300) is cancelled and retried.
+    const { makeCancelSignal } = await import('@remotion/renderer');
+    const STALL = Number(process.env.CV_STALL ?? 300) * 1000;
+    const attempt = async (label, file, opts) => {
+      if (fs.existsSync(file)) { console.log(`${label}: done earlier, skipping`); return; }
+      const partial = file.replace(/(\.\w+)$/, '.partial$1');
       for (let n = 1; ; n++) {
-        try { return await renderMedia(opts); } catch (e) {
-          if (n >= 3 || !/crash|Target closed|Session closed/i.test(String(e?.message ?? e))) throw e;
-          console.log(`${label}: ${String(e?.message ?? e).split('\n')[0]} - retrying (${n}/2)`);
-        }
+        const { cancelSignal, cancel } = makeCancelSignal();
+        let timer;
+        const poke = () => { clearTimeout(timer); timer = setTimeout(() => { console.log(`${label}: no progress for ${STALL / 1000}s, cancelling`); cancel(); }, STALL); };
+        const onProgress = opts.onProgress;
+        poke();
+        try {
+          await renderMedia({ ...opts, outputLocation: partial, cancelSignal, onProgress: (p) => { poke(); onProgress(p); } });
+          fs.renameSync(partial, file);
+          return;
+        } catch (e) {
+          const msg = String(e?.message ?? e);
+          if (n >= 3 || !/crash|Target closed|Session closed|cancel/i.test(msg)) throw e;
+          console.log(`${label}: ${msg.split('\n')[0]} - retrying (${n}/2)`);
+        } finally { clearTimeout(timer); }
       }
     };
     for (let a = 0, i = 0; a < total; a += CHUNK, i++) {
       const b = Math.min(total, a + CHUNK) - 1;
       const part = path.join(tmp, `part${String(i).padStart(3, '0')}.mp4`);
-      await attempt(`video ${a}-${b}`, {
+      await attempt(`video ${a}-${b}`, part, {
         serveUrl, composition, inputProps: props, codec: 'h264', crf: 20, muted: true, frameRange: [a, b],
-        outputLocation: part, concurrency, chromiumOptions, onProgress: progress(`video ${a}-${b}/${total}`),
+        concurrency, chromiumOptions, onProgress: progress(`video ${a}-${b}/${total}`),
       });
       parts.push(part);
       const wav = path.join(tmp, `part${String(i).padStart(3, '0')}.wav`);
-      await attempt(`audio ${a}-${b}`, {
+      await attempt(`audio ${a}-${b}`, wav, {
         serveUrl, composition, inputProps: props, codec: 'wav', frameRange: [a, b],
-        outputLocation: wav, concurrency, chromiumOptions, onProgress: progress(`audio ${a}-${b}/${total}`),
+        concurrency, chromiumOptions, onProgress: progress(`audio ${a}-${b}/${total}`),
       });
       wavs.push(wav);
     }
@@ -537,22 +576,25 @@ function init(slug) {
 }
 
 // One command, safe to re-run: every step checks its own state and skips what's already done.
-function setup() {
+function setup(args = []) {
+  const skipModels = args.includes('--skip-models');
   const step = (name, fn) => {
     process.stdout.write(`${name.padEnd(34)} `);
-    try { console.log(fn() ?? 'ok'); } catch (e) { console.log('FAILED'); die(`${name}: ${e.message.split('\n')[0]}`); }
+    try { console.log(fn() ?? 'ok'); } catch (e) {
+      console.log('FAILED');
+      // A failed child process: show the end of its stderr, where the real error is.
+      if (e.stderr) console.error(String(e.stderr).trim().split('\n').slice(-12).join('\n'));
+      die(`${name}: ${e.message.split('\n')[0]}`);
+    }
   };
-  const has = (cmd) => { try { run('which', [cmd]); return true; } catch { return false; } };
-  step('macOS on Apple Silicon', () => {
-    if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('MLX needs macOS on Apple Silicon');
-  });
+  step('platform', () => (MLX ? 'macOS Apple Silicon (MLX, GPU)' : `${process.platform} ${process.arch} (PyTorch, CPU)`));
   step('Node 22+', () => {
     if (Number(process.versions.node.split('.')[0]) < 22) throw new Error(`found ${process.version}; install Node 22 or newer`);
     return process.version;
   });
   step('uv, ImageMagick', () => {
-    const missing = ['uv', 'magick'].filter((c) => !has(c));
-    if (missing.length) throw new Error(`missing ${missing.join(', ')}: brew install ${missing.map((c) => (c === 'magick' ? 'imagemagick' : c)).join(' ')}`);
+    const missing = [has('uv') ? null : 'uv', has('magick') || has('convert') ? null : 'imagemagick'].filter(Boolean);
+    if (missing.length) throw new Error(`missing ${missing.join(', ')}: ${process.platform === 'darwin' ? 'brew install' : 'install'} ${missing.join(' ')}`);
   });
   step('npm packages', () => {
     const stamp = path.join(ROOT, 'node_modules', '.package-lock.json');
@@ -568,11 +610,14 @@ function setup() {
   });
   step('Python packages', () => {
     // uv checks the pins and only installs what's missing or different.
-    run('uv', ['pip', 'install', '-q', '--python', VENV_PY, '-r', path.join(ROOT, 'requirements.txt')], { stdio: ['ignore', 'ignore', 'inherit'] });
+    // --torch-backend cpu keeps the multi-GB CUDA wheels out on Linux.
+    run('uv', ['pip', 'install', '-q', '--python', VENV_PY, ...(MLX ? [] : ['--torch-backend', 'cpu']), '-r', REQUIREMENTS], { stdio: ['ignore', 'ignore', 'inherit'] });
+    return `ok (${path.basename(REQUIREMENTS)})`;
   });
   // Saying one line with each narrator downloads its model the first time (Hugging Face cache,
   // ~/.cache/huggingface) plus Whisper for the speech check; later runs load from the cache.
   for (const [name, n] of Object.entries(VOICES.narrators)) {
+    if (skipModels) { console.log(`${`narrator ${name}`.padEnd(34)} skipped (--skip-models; downloads on first build)`); continue; }
     step(`narrator ${name} (${n.tts} / ${n.voice})`, () => {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-setup-'));
       try {
@@ -588,10 +633,8 @@ function setup() {
 
 function doctor() {
   const checks = [
-    ['say', () => run('which', ['say'])],
-    ['afconvert', () => run('which', ['afconvert'])],
-    ['afinfo', () => run('which', ['afinfo'])],
-    ['magick (contact sheets)', () => run('which', ['magick'])],
+    ...(process.platform === 'darwin' ? [['say (optional engine)', () => run('which', ['say'])], ['afconvert', () => run('which', ['afconvert'])]] : []),
+    ['ImageMagick (contact sheets)', () => { if (!has('magick') && !has('convert')) throw new Error('not installed'); }],
     ['neural TTS env (.venv)', () => { if (!fs.existsSync(VENV_PY)) throw new Error('run: node bin/cv.mjs setup'); }],
     ['node_modules', () => { if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) throw new Error('run: node bin/cv.mjs setup'); }],
   ];
@@ -600,6 +643,7 @@ function doctor() {
     try { fn(); console.log(`ok   ${name}`); } catch (e) { ok = false; console.log(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
   }
   console.log(`narrators: ${Object.entries(VOICES.narrators).map(([k, n]) => `${k} = ${n.tts}/${n.voice}`).join(', ')} (default ${VOICES.defaultNarrator})`);
+  console.log(`voice backend: ${MLX ? 'mlx (GPU)' : 'torch (CPU)'}`);
   console.log(`output dir: ${OUT_DIR}`);
   if (!ok) process.exit(1);
 }
@@ -617,7 +661,7 @@ switch (cmd) {
   }
   case 'render': await render(rest[0], outArg); break;
   case 'doctor': doctor(); break;
-  case 'setup': setup(); break;
+  case 'setup': setup(process.argv.slice(3)); break;
   case 'voices': console.log(run('say', ['-v', '?']).split('\n').filter((l) => / en_/.test(l)).join('\n')); break;
   default:
     console.log(`usage: cv <command>

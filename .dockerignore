@@ -1,0 +1,12 @@
+.git
+node_modules
+.venv
+__pycache__
+public/*
+!public/.gitkeep
+# Specs are mounted at run time (docker/cv.sh); never bake local projects into the image.
+projects/*
+!projects/how-it-works
+projects/*/build
+out
+.DS_Store
