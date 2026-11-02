@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { boardBase, layoutScene, pickRandomVoice, pickVoice, sayable, speechRanges, splitPauses, splitSegments, toSrt } from '../lib/timing.mjs';
+import { boardBase, layoutScene, pickVoice, sayable, speechRanges, splitPauses, splitSegments, toSrt } from '../lib/timing.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -79,9 +79,14 @@ const ENGINES = {
   say: {},
 };
 const MAX_WER = 0.2;
-// Voice pool + the user's voice feedback live with the skill so feedback steers random picks.
+// Standard narrators + the user's voice feedback live with the skill.
 const VOICES_FILE = path.join(ROOT, 'skill', 'tutorial-video', 'voices.json');
-const randomVoice = () => pickRandomVoice(JSON.parse(fs.readFileSync(VOICES_FILE, 'utf8')));
+const VOICES = JSON.parse(fs.readFileSync(VOICES_FILE, 'utf8'));
+// A narrator preset ("heart", "ryan") -> engine, voice and style instruction.
+function narratorTts(name) {
+  const n = VOICES.narrators[name];
+  return { engine: n.tts, model: ENGINES[n.tts].model, voice: n.voice, instruct: n.instruct ?? null, lang: null };
+}
 
 const die = (msg) => { console.error(`cv: ${msg}`); process.exit(1); };
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -102,6 +107,7 @@ function validate(spec) {
   if (!Array.isArray(spec.scenes) || !spec.scenes.length) errs.push('spec.scenes must be a non-empty array');
   if (!/^[a-z0-9-]+$/.test(spec.slug ?? '')) errs.push('spec.slug must match [a-z0-9-]+');
   if (spec.tts && !ENGINES[spec.tts]) errs.push(`spec.tts must be one of ${Object.keys(ENGINES).join(', ')}`);
+  if (spec.narrator !== undefined && !VOICES.narrators[spec.narrator]) errs.push(`spec.narrator must be one of ${Object.keys(VOICES.narrators).join(', ')}`);
   const ids = new Set();
   (spec.scenes ?? []).forEach((s, i) => {
     const at = `scenes[${i}]${s.id ? ` (${s.id})` : ''}`;
@@ -126,6 +132,7 @@ function validate(spec) {
       if (cues !== QUIZ_CUES) errs.push(`${at}: quiz narration needs ${QUIZ_CUES} [[next]] cues (question, A, B, C, D, countdown, reveal); got ${cues}`);
     }
     if (s.voice !== undefined && typeof s.voice !== 'string') errs.push(`${at}: voice must be a string`);
+    if (s.narrator !== undefined && !VOICES.narrators[s.narrator]) errs.push(`${at}: narrator must be one of ${Object.keys(VOICES.narrators).join(', ')}`);
     if (s.transition && !TRANSITIONS.includes(s.transition.type)) errs.push(`${at}: transition.type must be one of ${TRANSITIONS.join(', ')}`);
     if (s.lang !== undefined && !/^[a-z]$/.test(s.lang)) errs.push(`${at}: lang must be one Kokoro language letter (a, b, e, f, h, i, j, p, z)`);
     if (s.music !== undefined && (typeof s.music !== 'object' || !s.music.src)) errs.push(`${at}: music must be {src, volume?, duck?}`);
@@ -163,18 +170,24 @@ function validate(spec) {
 }
 
 let sayVoiceCache;
-// No voice in the spec: pick a random kokoro voice and write it back, so rebuilds,
-// stills and the final render all use the same (cached) voice.
+// No narrator, engine or voice in the spec: write in the default narrator, so the spec
+// says who speaks and a later change of default doesn't re-voice old videos.
 function pinVoice(file, spec) {
-  if ((spec.tts ?? 'kokoro') !== 'kokoro' || (spec.voice && spec.voice !== 'auto')) return;
-  spec.voice = randomVoice();
+  if (spec.narrator || (spec.tts && spec.tts !== 'kokoro') || (spec.voice && spec.voice !== 'auto')) return;
+  spec.narrator = VOICES.defaultNarrator;
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  raw.voice = spec.voice;
+  delete raw.tts;
+  delete raw.voice;
+  raw.narrator = spec.narrator;
   fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n');
-  console.log(`voice: randomly picked ${spec.voice} (saved to ${path.relative(ROOT, file)}; set "voice" to override)`);
+  console.log(`voice: narrator ${spec.narrator} (saved to ${path.relative(ROOT, file)}; set "narrator" to change)`);
 }
 
 function resolveTts(spec) {
+  if (spec.narrator) {
+    if (!fs.existsSync(VENV_PY)) die('neural TTS needs the Python env: run `node bin/cv.mjs setup`');
+    return { ...narratorTts(spec.narrator), speed: spec.speed ?? 1.0, verify: spec.verify ?? true };
+  }
   const engine = spec.tts ?? 'kokoro';
   if (engine === 'say') {
     const voice = spec.voice && spec.voice !== 'auto' ? spec.voice : (sayVoiceCache ??= pickVoice(run('say', ['-v', '?'])));
@@ -204,11 +217,11 @@ const wavSeconds = (wav) => {
 };
 
 // Synthesize every uncached clip. jobs: [{key, text (spoken form), ref (caption form)}].
-function synthesize(jobs, tts, outDir) {
+function synthesize(jobs, tts, outDir, quiet = false) {
   // The same line can appear twice (e.g. a repeated quiz option); synthesize it once.
   const todo = [...new Map(jobs.filter((j) => !fs.existsSync(path.join(outDir, `${j.key}.wav`))).map((j) => [j.key, j])).values()];
   if (!todo.length) return;
-  console.log(`tts: ${tts.engine}${tts.voice ? ` / ${tts.voice}` : ''}: generating ${todo.length} clip(s)...`);
+  if (!quiet) console.log(`tts: ${tts.engine}${tts.voice ? ` / ${tts.voice}` : ''}: generating ${todo.length} clip(s)...`);
   if (tts.engine === 'say') {
     for (const j of todo) {
       const base = path.join(outDir, j.key);
@@ -240,7 +253,7 @@ function synthesize(jobs, tts, outDir) {
     }
   }
   if (bad.length) die(`speech check failed (clip skipped/garbled words; re-run to resample, or rephrase):\n  - ${bad.join('\n  - ')}`);
-  if (tts.verify) console.log(`tts: speech check passed (Whisper transcript within ${MAX_WER * 100}% word error)`);
+  if (tts.verify && !quiet) console.log(`tts: speech check passed (Whisper transcript within ${MAX_WER * 100}% word error)`);
 }
 
 // Remotion ships ffmpeg/ffprobe in a platform package; call it directly (no Homebrew ffmpeg needed).
@@ -283,14 +296,17 @@ function build(arg) {
 
   // Pass 1: every narration segment -> a cached clip key, then synthesize the missing ones in one batch.
   // segs[scene][segment] = spoken parts, split on [[pause N]].
-  // A scene can override the narrator (`voice`, `speed`, `lang`); clips are cached per voice, speed and lang.
-  const sceneTts = spec.scenes.map((s) => ({ ...tts, voice: s.voice ?? tts.voice, speed: s.speed ?? tts.speed, lang: s.lang ?? tts.lang }));
+  // A scene can override the narrator (`narrator`, or `voice`/`speed`/`lang`); clips are cached per engine, voice, style, speed and lang.
+  const sceneTts = spec.scenes.map((s) => {
+    const base = s.narrator ? { ...tts, ...narratorTts(s.narrator) } : tts;
+    return { ...base, voice: s.voice ?? base.voice, speed: s.speed ?? base.speed, lang: s.lang ?? base.lang };
+  });
   const segs = spec.scenes.map((s, si) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
     ? { key: ttsKey(sceneTts[si], sayable(p.text, { ...spec.pronounce, ...s.pronounce })), text: sayable(p.text, { ...spec.pronounce, ...s.pronounce }), ref: p.text, pauseAfter: p.pauseAfter, tts: sceneTts[si] }
     : { key: null, ref: '', pauseAfter: p.pauseAfter }))));
   const groups = new Map();
   for (const j of segs.flat(2).filter((x) => x.key)) {
-    const g = `${j.tts.voice}|${j.tts.speed}|${j.tts.lang}`;
+    const g = `${j.tts.engine}|${j.tts.voice}|${j.tts.instruct}|${j.tts.speed}|${j.tts.lang}`;
     if (!groups.has(g)) groups.set(g, { tts: j.tts, jobs: [] });
     groups.get(g).jobs.push(j);
   }
@@ -513,20 +529,61 @@ function init(slug) {
   fs.mkdirSync(dir, { recursive: true });
   const tpl = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates', 'video.json'), 'utf8'));
   tpl.slug = slug;
-  tpl.voice = randomVoice();
+  delete tpl.tts;
+  delete tpl.voice;
+  tpl.narrator = VOICES.defaultNarrator;
   fs.writeFileSync(file, JSON.stringify(tpl, null, 2) + '\n');
   console.log(file);
 }
 
+// One command, safe to re-run: every step checks its own state and skips what's already done.
 function setup() {
-  if (!fs.existsSync(VENV_PY)) run('uv', ['venv', '-q', '--python', '3.12', path.join(ROOT, '.venv')], { stdio: 'inherit' });
-  run('uv', ['pip', 'install', '-q', '--python', VENV_PY, '-r', path.join(ROOT, 'requirements.txt')], { stdio: 'inherit' });
-  // Warm-up downloads the Kokoro weights, the spaCy model misaki needs, and Whisper for the speech check.
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-setup-'));
-  const tts = { engine: 'kokoro', ...ENGINES.kokoro, speed: 1, instruct: null, verify: true };
-  synthesize([{ key: 'warmup', text: 'Setup complete.', ref: 'Setup complete.' }], tts, tmp);
-  fs.rmSync(tmp, { recursive: true, force: true });
-  console.log('setup ok: kokoro + speech check ready');
+  const step = (name, fn) => {
+    process.stdout.write(`${name.padEnd(34)} `);
+    try { console.log(fn() ?? 'ok'); } catch (e) { console.log('FAILED'); die(`${name}: ${e.message.split('\n')[0]}`); }
+  };
+  const has = (cmd) => { try { run('which', [cmd]); return true; } catch { return false; } };
+  step('macOS on Apple Silicon', () => {
+    if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('MLX needs macOS on Apple Silicon');
+  });
+  step('Node 22+', () => {
+    if (Number(process.versions.node.split('.')[0]) < 22) throw new Error(`found ${process.version}; install Node 22 or newer`);
+    return process.version;
+  });
+  step('uv, ImageMagick', () => {
+    const missing = ['uv', 'magick'].filter((c) => !has(c));
+    if (missing.length) throw new Error(`missing ${missing.join(', ')}: brew install ${missing.map((c) => (c === 'magick' ? 'imagemagick' : c)).join(' ')}`);
+  });
+  step('npm packages', () => {
+    const stamp = path.join(ROOT, 'node_modules', '.package-lock.json');
+    const lock = path.join(ROOT, 'package-lock.json');
+    if (fs.existsSync(stamp) && fs.statSync(stamp).mtimeMs >= fs.statSync(lock).mtimeMs) return 'ok (already installed)';
+    run('npm', ['ci', '--no-audit', '--no-fund'], { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] });
+    return 'installed';
+  });
+  step('Python env (.venv)', () => {
+    if (fs.existsSync(VENV_PY)) return 'ok (exists)';
+    run('uv', ['venv', '-q', '--python', '3.12', path.join(ROOT, '.venv')], { stdio: ['ignore', 'ignore', 'inherit'] });
+    return 'created';
+  });
+  step('Python packages', () => {
+    // uv checks the pins and only installs what's missing or different.
+    run('uv', ['pip', 'install', '-q', '--python', VENV_PY, '-r', path.join(ROOT, 'requirements.txt')], { stdio: ['ignore', 'ignore', 'inherit'] });
+  });
+  // Saying one line with each narrator downloads its model the first time (Hugging Face cache,
+  // ~/.cache/huggingface) plus Whisper for the speech check; later runs load from the cache.
+  for (const [name, n] of Object.entries(VOICES.narrators)) {
+    step(`narrator ${name} (${n.tts} / ${n.voice})`, () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-setup-'));
+      try {
+        synthesize([{ key: 'check', text: 'Setup complete.', ref: 'Setup complete.' }], { ...narratorTts(name), speed: 1, verify: true }, tmp, true);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+  console.log(`\nsetup ok. Default narrator: ${VOICES.defaultNarrator}. Videos go to ${OUT_DIR}`);
+  console.log('Claude Code skill: scripts/deploy-skill.sh (copies skill/tutorial-video to ~/.claude/skills)');
 }
 
 function doctor() {
@@ -536,13 +593,13 @@ function doctor() {
     ['afinfo', () => run('which', ['afinfo'])],
     ['magick (contact sheets)', () => run('which', ['magick'])],
     ['neural TTS env (.venv)', () => { if (!fs.existsSync(VENV_PY)) throw new Error('run: node bin/cv.mjs setup'); }],
-    ['node_modules', () => { if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) throw new Error('run npm ci'); }],
+    ['node_modules', () => { if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) throw new Error('run: node bin/cv.mjs setup'); }],
   ];
   let ok = true;
   for (const [name, fn] of checks) {
     try { fn(); console.log(`ok   ${name}`); } catch (e) { ok = false; console.log(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
   }
-  console.log(`default tts: kokoro / ${ENGINES.kokoro.voice}  (alternatives: qwen3, chatterbox, say)`);
+  console.log(`narrators: ${Object.entries(VOICES.narrators).map(([k, n]) => `${k} = ${n.tts}/${n.voice}`).join(', ')} (default ${VOICES.defaultNarrator})`);
   console.log(`output dir: ${OUT_DIR}`);
   if (!ok) process.exit(1);
 }

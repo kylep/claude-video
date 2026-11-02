@@ -161,11 +161,14 @@ Recording permission. If it fails, ask the user to record instead of working aro
 `slug`, `title` (shown top-left on every scene), `targetSeconds`, `accent` (hex),
 `captions` (bool), `pronounce`, `music` (`{src, volume=0.16, duck=0.4}`: a
 looped bed, faded in/out and ducked under narration; use CC0 tracks and
-note the source), `scenes`, and the voice settings:
+note the source), `scenes`, and the voice settings.
+
+**`narrator`** (top-level or per scene) is the normal way to pick a voice: `"heart"` (default,
+female) or `"ryan"` (male). See **Voices** below. The raw engine settings are for experiments:
 
 | `tts` | default `voice` | notes |
 |---|---|---|
-| `kokoro` (default) | random from `voices.json` | Fast (~1s/clip warm), stable. 27 English voices |
+| `kokoro` | `af_heart` | Fast (~1s/clip warm), stable. 27 English voices |
 | `qwen3` | `Ryan` | More expressive; slower, autoregressive; supports `instruct` (style) |
 | `chatterbox` | built-in | Most expressive; slower, autoregressive |
 | `say` | best installed | macOS built-in; robotic. Uses `rate` (wpm) instead of `speed` |
@@ -205,10 +208,16 @@ stated period. Credits list only sources actually used. Run a fact-check pass be
 
 ## Voices
 
-- **Random unless specified.** If the user names a voice, set `"voice"`. Otherwise leave it out:
-  `cv init`/`cv build` pick a random English Kokoro voice from `voices.json` (never `excluded`,
-  `preferred` 3x as likely) and **write it into video.json**, so rebuilds stay on that voice.
-  To re-roll, delete the `"voice"` line.
+- **Two standard narrators** (the user's choice, 2026-11-01), defined in `voices.json` `narrators`:
+
+  | `narrator` | engine / voice | use |
+  |---|---|---|
+  | `heart` (default) | Kokoro `af_heart` | female narrator; quiz hosts. ~3x faster than real time |
+  | `ryan` | Qwen3 `Ryan` + a "calm, confident university professor" `instruct` | male narrator; how-it-works explainers. ~real time |
+
+  `cv init`/`cv build` write `"narrator": "heart"` into a spec that names no voice. Set
+  `"narrator"` per scene to switch speakers mid-video. Use a raw `tts`/`voice` only when the user
+  asks for a different voice.
 - Every video shows `voice: <name>` bottom-right during the opening scene (automatic).
 - Kokoro ids: first letter = accent (`a` American, `b` British), second = `f`/`m`.
   Samples of all of them are in `~/gh/reports/video/voice-samples/kokoro/`.
