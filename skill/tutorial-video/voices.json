@@ -15,7 +15,9 @@
   },
   "defaultNarrator": "heart",
   "excluded": {
-    "bf_emma": "robotic, poorer quality than af_heart (Kyle, 2026-11-01)"
+    "bf_emma": "robotic, poorer quality than af_heart (Kyle, 2026-11-01)",
+    "qwen3/Aiden": "'bad, robotic' (Kyle, 2026-11-01)",
+    "piper (all voices)": "robotic next to Kokoro/Qwen3 (Kyle, 2026-11-01); not an engine here"
   },
   "preferred": {
     "af_heart": "2026-11-01 Kyle: 'jeez af_heart is really good', on par with qwen3; standard female narrator",
@@ -61,6 +63,46 @@
       "date": "2026-11-01",
       "voice": "kokoro/af_heart, qwen3/Ryan",
       "note": "Listening test vs Bella, Qwen3 Aiden/Serena/Vivian, Chatterbox, Fish S2 Pro: 'jeez af_heart is really good. She's on par with the 2 qwen3 ones. I think for female, kokoro heart. For male, qwen3 ryan. Let's standardize on that.' Ryan picked as 'the most expressive' Qwen3 voice; professor instruct liked."
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "qwen3/Ryan (professor instruct)",
+      "note": "'pretty good'; confirmed as standard male narrator"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "qwen3/Aiden (professor instruct)",
+      "note": "'bad, robotic'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "kokoro/af_heart",
+      "note": "'good'; confirmed as standard female narrator"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "kokoro/af_bella",
+      "note": "'like af_heart but a bit worse'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "piper/en_US-lessac-high",
+      "note": "'bad, very robotic'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "piper/en_US-ryan-high",
+      "note": "'also bad but better than lessac'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "piper/en_US-ljspeech-high",
+      "note": "'also bad'"
+    },
+    {
+      "date": "2026-11-01",
+      "voice": "piper/en_GB-cori-high",
+      "note": "'robotic but honestly kinda nice for a home assistant' (not for videos)"
     }
   ]
 }
