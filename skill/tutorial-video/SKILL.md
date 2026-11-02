@@ -217,7 +217,7 @@ stated period. Credits list only sources actually used. Run a fact-check pass be
 
   **Names:** the woman is **Kokoro Heart** and the man is **Qwen Ryan** (the user's naming,
   2026-11-01). Two-host videos (news anchors, a host plus an explainer) can call each other
-  by these names in narration ("Thanks, Ryan."). They are named presenters, not characters:
+  by these names in narration, first name first ("Thanks, Qwen." / "Over to you, Kokoro."). They are named presenters, not characters:
   no invented backstories or opinions presented as fact.
 
   `cv init`/`cv build` write `"narrator": "heart"` into a spec that names no voice. Set
