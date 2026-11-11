@@ -52,9 +52,9 @@ function ensureSfx(name) {
 }
 const OUT_DIR = process.env.CV_OUT_DIR ?? path.join(os.homedir(), 'gh', 'reports', 'video');
 const FPS = 30;
-const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'quiz', 'outro',
+const TYPES = ['title', 'bullets', 'code', 'terminal', 'flow', 'image', 'clip', 'breadboard', 'diagram', 'quiz', 'outro', 'chat', 'timeline',
   'open', 'bumper', 'globe', 'security', 'market', 'movers', 'scoreboard', 'story', 'screen', 'gif', 'rundown', 'signoff'];
-const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts' };
+const ITEMS = { bullets: 'bullets', terminal: 'lines', flow: 'steps', breadboard: 'groups', diagram: 'callouts', chat: 'messages', timeline: 'stages' };
 const BOARD_KINDS = ['pico', 'wire', 'resistor', 'led', 'rgbled', 'pot', 'diode', 'transistor', 'buzzer', 'glow', 'strip', 'flow', 'remove'];
 const ANCHORS = {
   led: ['dome', 'anode', 'cathode', 'flat'], resistor: ['bands', 'left', 'right', 'body'], transistor: ['flat', 'e', 'b', 'c'],
@@ -162,6 +162,16 @@ function validate(spec) {
         });
       });
     }
+    if (s.type === 'chat') {
+      const cues = (s.narration?.match(/\[\[next\]\]/g) ?? []).length;
+      if (cues !== (s.messages ?? []).length) errs.push(`${at}: chat narration needs one [[next]] per message (each message is read in its speaker's voice)`);
+      (s.messages ?? []).forEach((m, mi) => {
+        if (!spec.cast?.[m.from]) errs.push(`${at}: messages[${mi}].from "${m.from}" is not in spec.cast`);
+      });
+    }
+    if (s.type === 'timeline') (s.stages ?? []).forEach((st, ti) => {
+      if (!st.label || !st.color) errs.push(`${at}: stages[${ti}] needs label and color`);
+    });
     if (s.type === 'code' && !s.code) errs.push(`${at}: code is required`);
     if (s.type === 'code' && s.code) {
       const lines = s.code.split('\n');
@@ -170,6 +180,11 @@ function validate(spec) {
       if (lines.length > 18) errs.push(`${at}: ${lines.length} code lines; keep it under 18 or split the scene`);
     }
   });
+  for (const [k, c] of Object.entries(spec.cast ?? {})) {
+    if (!c.name) errs.push(`cast.${k}: name is required`);
+    if (c.narrator !== undefined && !VOICES.narrators[c.narrator]) errs.push(`cast.${k}: narrator must be one of ${Object.keys(VOICES.narrators).join(', ')}`);
+    if (c.narrator && c.voice) errs.push(`cast.${k}: set narrator or voice (a Kokoro voice), not both`);
+  }
   if (spec.music && (typeof spec.music.src !== 'string' || !spec.music.src)) errs.push('spec.music.src is required when music is set');
   if (errs.length) die(`invalid spec:\n  - ${errs.join('\n  - ')}`);
 }
@@ -320,8 +335,12 @@ function build(arg) {
     const base = s.narrator ? { ...tts, ...narratorTts(s.narrator) } : tts;
     return { ...base, voice: s.voice ?? base.voice, speed: s.speed ?? base.speed, lang: s.lang ?? base.lang };
   });
-  const segs = spec.scenes.map((s, si) => splitSegments(s.narration).map((t) => splitPauses(t).map((p) => (p.text
-    ? { key: ttsKey(sceneTts[si], sayable(p.text, { ...spec.pronounce, ...s.pronounce })), text: sayable(p.text, { ...spec.pronounce, ...s.pronounce }), ref: p.text, pauseAfter: p.pauseAfter, tts: sceneTts[si] }
+  // Chat scenes: the segment after cue n is message n, read in its speaker's voice.
+  const castTts = (base, c) => (c?.narrator ? { ...base, ...narratorTts(c.narrator) }
+    : c?.voice ? { ...base, engine: 'kokoro', model: ENGINES.kokoro.model, voice: c.voice, instruct: null, lang: null } : base);
+  const segTts = (s, si, n) => (s.type === 'chat' && n > 0 ? castTts(sceneTts[si], spec.cast?.[s.messages[n - 1].from]) : sceneTts[si]);
+  const segs = spec.scenes.map((s, si) => splitSegments(s.narration).map((t, n) => splitPauses(t).map((p) => (p.text
+    ? { key: ttsKey(segTts(s, si, n), sayable(p.text, { ...spec.pronounce, ...s.pronounce })), text: sayable(p.text, { ...spec.pronounce, ...s.pronounce }), ref: p.text, pauseAfter: p.pauseAfter, tts: segTts(s, si, n) }
     : { key: null, ref: '', pauseAfter: p.pauseAfter }))));
   const groups = new Map();
   for (const j of segs.flat(2).filter((x) => x.key)) {
@@ -357,6 +376,7 @@ function build(arg) {
     if (emoji) ensureEmoji(emoji);
     if (s.sfx) scene.sfx = s.sfx.map((x) => ({ ...x, src: ensureSfx(x.name) }));
     if (s.type === 'breadboard') scene.base = boardBase(spec.scenes, si);
+    if (s.type === 'chat') scene.cast = spec.cast;
     if (s.type === 'quiz') {
       const tick = path.join(pubDir, 'assets', 'tick.wav');
       if (!fs.existsSync(tick)) writeTick(tick);

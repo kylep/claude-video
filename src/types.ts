@@ -5,11 +5,18 @@ export type Caption = { text: string; start: number; end: number };
 export type Segment = { index: number; from: number; durationInFrames: number; audio: string };
 
 export type SceneType = 'title' | 'bullets' | 'code' | 'terminal' | 'flow' | 'image' | 'clip' | 'breadboard' | 'diagram' | 'quiz' | 'outro'
+  | 'chat' | 'timeline'
   | 'open' | 'bumper' | 'globe' | 'security' | 'market' | 'movers' | 'scoreboard'
   | 'story' | 'screen' | 'gif' | 'rundown' | 'signoff';
 
 // diagram scenes: one big part with labels revealed one per [[next]] cue.
 export type Callout = { text: string; anchor: string; lit?: boolean };
+
+// chat scenes: who's talking. Keys are what messages use in `from`.
+export type CastMember = { name: string; side?: 'left' | 'right'; icon?: 'laptop' | 'robot'; narrator?: string; voice?: string };
+export type ChatMessage = { from: string; text: string; wire?: string; light?: string };
+// timeline scenes: one stage per cue; the big light shows the active stage.
+export type Stage = { label: string; detail?: string; color: string; level?: number; breathe?: boolean; sound?: boolean };
 
 // Breadboard parts. Holes are "a1".."j63"; rails are "far+:12", "near-:3", etc.
 export type BoardItem = {
@@ -64,6 +71,10 @@ export type Scene = NewsFields & {
   voiceTag?: string;    // filled in by cv build: narrator credit when the voice changes
   voiceName?: string;   // filled in by cv build: this scene's narrator
   callouts?: Callout[];
+  messages?: ChatMessage[]; // chat
+  cast?: Record<string, CastMember>; // chat: copied from spec.cast by cv build
+  light?: string;           // chat: the robot's light colour before any message sets one
+  stages?: Stage[];         // timeline
   transition?: Transition; // into the NEXT scene
   sfx?: { name: string; cue?: number; volume?: number; at?: number; src?: string }[]; // src filled by cv build
   // Filled in by `cv voice`:

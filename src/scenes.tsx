@@ -7,6 +7,7 @@ import type { Scene } from './types';
 import { BreadboardScene } from './breadboard';
 import { DiagramScene } from './diagram';
 import { QuizScene } from './quiz';
+import { ChatScene, TimelineScene } from './chat';
 import { MarketScene, MoversScene, ScoreboardScene } from './news/dataviz';
 import { OpenScene, BumperScene, GlobeScene, SecurityScene } from './news/stage';
 import { StoryScene, ScreenScene, GifScene, RundownScene, SignoffScene } from './news/story';
@@ -240,6 +241,7 @@ export const OutroScene: React.FC<P> = ({ scene, accent }) => (
 export const sceneComponents: Record<Scene['type'], React.FC<P>> = {
   title: TitleScene, bullets: BulletsScene, code: CodeScene, terminal: TerminalScene,
   flow: FlowScene, image: ImageScene, clip: ClipScene, breadboard: BreadboardScene, diagram: DiagramScene, quiz: QuizScene, outro: OutroScene,
+  chat: ChatScene, timeline: TimelineScene,
   open: OpenScene, bumper: BumperScene, globe: GlobeScene, security: SecurityScene,
   market: MarketScene, movers: MoversScene, scoreboard: ScoreboardScene,
   story: StoryScene, screen: ScreenScene, gif: GifScene, rundown: RundownScene, signoff: SignoffScene,

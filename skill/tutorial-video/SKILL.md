@@ -92,6 +92,8 @@ lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/
 | `breadboard` | `heading`, `groups[{label, items[]}]`, `zoom`, `tags`, `fresh` | electronics builds: parts snap into holes one group per cue, camera eases to each group, holes get tags |
 | `diagram` | `heading`, `component`, `callouts[{text, anchor, lit?}]` | one big part with labels popping in per cue (`\n` splits a label line) |
 | `quiz` | `question`, `options[4]`, `answer` (0–3) | multiple choice: options appear per cue, silent 5-4-3-2-1 countdown with ticks, right answer turns green |
+| `chat` | `heading`, `messages[{from, text, wire?, light?}]`, `light` | two devices talking in speech bubbles, one cue per message; `wire` shows the real line sent under the words; each message is read in its speaker's voice from top-level `cast` (`{key: {name, side, icon: laptop\|robot, narrator \| voice}}`); `light` sets the robot icon's colour |
+| `timeline` | `heading`, `stages[{label, detail?, color, level?, breathe?, sound?}]` | status sequences: a big light shows the active stage's colour (dimmed by `level`, pulsing if `breathe`, notes if `sound`) over a strip of stages, one per cue |
 | `outro` | `title`, `subtitle` | wrap-up + where to find it |
 
 **Breadboard items** (`groups[].items[]`): holes are `a1`…`j63`, rails are
