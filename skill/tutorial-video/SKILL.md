@@ -13,6 +13,21 @@ Pipeline: `video.json` → Kokoro (local neural TTS via mlx-audio) speaks each n
 segment → Whisper transcribes it back and rejects garbled clips → measured audio
 lengths set every cue → Remotion renders MP4 + `.srt` → `~/gh/reports/video/<slug>.mp4`.
 
+## Quick or polished
+
+Match the effort to what the user asked for (Kyle, 2026-11-16: "if i ask for a quick
+video, i dont need you to edit it heavily. if i ask for a good quality video, we make
+it clean").
+
+- **Quick video** (the default when they just say "make me a video", or say quick,
+  rough, or they're tired): accuracy still holds, but build once, fix only hard failures
+  (speech check, CLI errors), glance at the stills once, render. A length near the
+  target is fine; don't trim narration to hit it exactly, and don't polish wording or
+  layout.
+- **Good-quality video** (they say good, clean, polished, or it's for sharing): the full
+  loop below: hit the target length, review stills carefully, and fix crowding,
+  orphans and phrasing before rendering.
+
 ## Workflow
 
 1. **Understand the subject first.** Read the code/docs you're explaining. A video
