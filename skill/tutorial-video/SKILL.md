@@ -102,7 +102,7 @@ it clean").
 | `flow` | `heading`, `steps[{label, detail}]` | pipelines and processes, cued; the active step glows |
 | `code` | `heading`, `code`, `language`, `highlight[]` | config/code snippets |
 | `terminal` | `heading`, `lines[{cmd, out}]` | CLI walkthroughs, typed out, cued |
-| `image` | `heading`, `src`, `caption` | screenshots (slow zoom) |
+| `image` | `heading`, `src`, `caption`, `fullscreen` | screenshots (slow zoom); `fullscreen: true` fills the frame with no heading/caption (for full-screen mock-ups and game shots whose text must be readable) |
 | `clip` | `heading`, `src` | screen recordings (muted under narration; scene lasts ≥ the clip) |
 | `breadboard` | `heading`, `groups[{label, items[]}]`, `zoom`, `tags`, `fresh` | electronics builds: parts snap into holes one group per cue, camera eases to each group, holes get tags |
 | `diagram` | `heading`, `component`, `callouts[{text, anchor, lit?}]` | one big part with labels popping in per cue (`\n` splits a label line) |

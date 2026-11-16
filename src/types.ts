@@ -51,6 +51,8 @@ export type Scene = NewsFields & {
   steps?: { label: string; detail?: string }[];
   src?: string;
   caption?: string;
+  /** image scenes: fill the whole frame; heading and caption are not drawn (the image labels itself) */
+  fullscreen?: boolean;
   groups?: BoardGroup[];
   base?: BoardItem[];   // filled in by cv build: parts placed in earlier breadboard scenes
   zoom?: boolean;

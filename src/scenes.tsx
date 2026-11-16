@@ -200,6 +200,15 @@ export const ImageScene: React.FC<P> = ({ scene, accent }) => {
   const zoom = interpolate(frame, [0, scene.durationInFrames], [1, 1.06]);
   const maxW = 1920 - 150 * 2;
   const maxH = 1080 - 120 - 170 - (scene.heading ? 120 : 0) - (scene.caption ? 60 : 0);
+  if (scene.fullscreen) {
+    return (
+      <AbsoluteFill style={{ background: colors.bg, overflow: 'hidden' }}>
+        {scene.src && <Img src={staticFile(scene.src)} style={{
+          width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})`,
+        }} />}
+      </AbsoluteFill>
+    );
+  }
   return (
     <Body>
       <Heading text={scene.heading} accent={accent} />
