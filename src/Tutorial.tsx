@@ -203,6 +203,9 @@ export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCapt
       <TransitionSeries.Sequence key={s.id} durationInFrames={s.durationInFrames + T}>
         <SceneFrame scene={s} accent={accent} showCaptions={showCaptions} captionStyle={captionStyle ?? 'box'} news={news}
           fadeIn={!prevT && !(i > 0 && OVERLAYS.has(scenes[i - 1].transition?.type ?? ''))} fadeOut={!T} visible={s.durationInFrames + T} />
+        {!(s.type === 'image' && s.fullscreen) && (
+          <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>{title}</div>
+        )}
         {(news || s.voiceTag) && <VoiceLabel label={s.voiceName ?? s.voiceTag ?? ''} until={s.durationInFrames + T} accent={accent} news={news} />}
       </TransitionSeries.Sequence>,
     );
@@ -229,9 +232,6 @@ export const Tutorial: React.FC<VideoProps> = ({ title, accent, scenes, showCapt
   return (
     <AbsoluteFill style={{ background: `radial-gradient(1400px 900px at 15% 0%, ${colors.bg2}, ${colors.bg})` }}>
       <TransitionSeries>{children}</TransitionSeries>
-      <div style={{ position: 'absolute', top: 44, left: 150, fontFamily: fonts.mono, fontSize: 22, color: colors.muted, letterSpacing: 2, textTransform: 'uppercase' }}>
-        {title}
-      </div>
       {news && ticker?.length ? <Ticker items={ticker} accent={accent} date={date} /> : null}
       {(music ?? []).map((m, i) => <MusicBed key={i} music={m} total={total} fps={fps} />)}
       <div style={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: `${(frame / total) * 100}%`, background: accent }} />

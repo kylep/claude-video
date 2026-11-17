@@ -55,7 +55,7 @@ export type Scene = NewsFields & {
   fullscreen?: boolean;
   groups?: BoardGroup[];
   base?: BoardItem[];   // filled in by cv build: parts placed in earlier breadboard scenes
-  zoom?: boolean;
+  zoom?: boolean;     // image: false preserves screenshot edges; breadboard: camera tracking
   fresh?: boolean;      // breadboard: start from an empty board
   tags?: boolean;       // breadboard: label the active group's holes (default true)
   component?: 'led' | 'resistor' | 'transistor' | 'rgbled' | 'mix' | 'pwm' | 'buzzer' | 'diode' | 'pot';

@@ -197,7 +197,7 @@ export const FlowScene: React.FC<P> = ({ scene, accent }) => {
 // because percentage heights don't resolve reliably for images in flex columns).
 export const ImageScene: React.FC<P> = ({ scene, accent }) => {
   const frame = useCurrentFrame();
-  const zoom = interpolate(frame, [0, scene.durationInFrames], [1, 1.06]);
+  const zoom = scene.zoom === false ? 1 : interpolate(frame, [0, scene.durationInFrames], [1, 1.06]);
   const maxW = 1920 - 150 * 2;
   const maxH = 1080 - 120 - 170 - (scene.heading ? 120 : 0) - (scene.caption ? 60 : 0);
   if (scene.fullscreen) {
